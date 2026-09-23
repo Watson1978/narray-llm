@@ -353,7 +353,7 @@ class TestKVCacheGeneration < Test::Unit::TestCase
     gap_with = top_gap(with)
     lines << format('  1 位と 2 位の差: cache 無し %.6f / cache 有り %.6f', gap_without, gap_with)
     if [gap_without, gap_with].min <= 1e-3
-      lines << '  差が 1e-3 以下の僅差。docs/cumo-issues.md に記録した「cuBLAS が M=1 と'
+      lines << '  差が 1e-3 以下の僅差。docs/cumo-history.md に記録した「cuBLAS が M=1 と'
       lines << '  M=n でカーネルを切り替えて結果が変わる」現象と同根の可能性が高い。'
     end
     lines.join("\n")

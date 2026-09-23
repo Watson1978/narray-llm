@@ -35,7 +35,7 @@ DATA_DIR = os.environ.get("NARRAY_LLM_DATA", os.path.join(ROOT, "data"))
 FIXTURE = os.path.join(ROOT, "python", "fixtures", "gpt2_124M_greedy.json")
 LENGTHS = [64, 256]
 REPEAT = int(os.environ.get("REPEAT", 3))
-# docs/cumo-issues.md: below this the two implementations are picking between
+# docs/cumo-history.md: below this the two implementations are picking between
 # logits that a different GEMM kernel ordering can reorder.
 CLOSE_CALL = 1e-3
 
@@ -114,8 +114,8 @@ def check_fixture(generator, fixture, length, tokens):
               f"    その位置の logits 1 位 {int(top[0])}={row[top[0]]:.6f}, "
               f"2 位 {int(top[1])}={row[top[1]]:.6f}, 差={gap:.6e}")
     if gap <= CLOSE_CALL:
-        detail += ("\n    差が 1e-3 以下の僅差。docs/cumo-issues.md の「GEMM のカーネル選択で"
-                   "結果が変わる」と同根なので、ここ以降の比較は打ち切る。")
+        detail += ("\n    差が 1e-3 以下の僅差。docs/cumo-history.md の「差ではなかったもの」に"
+                   "ある GEMM のカーネル切り替えと同根なので、ここ以降の比較は打ち切る。")
     return False, detail
 
 

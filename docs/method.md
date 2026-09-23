@@ -1,6 +1,6 @@
 # 比較の条件と手順
 
-同じ重み・同じアルゴリズムで実装を並べ、tokens/sec を比べるときの共通の条件と手順。**結果そのものは docs/results/ の実装ごとのファイルにある** (現在は [gpt2-124m.md](results/gpt2-124m.md))。機械の側の性質は [machine.md](machine.md)、cumo の版ごとの所見は [cumo-issues.md](cumo-issues.md)。
+同じ重み・同じアルゴリズムで実装を並べ、tokens/sec を比べるときの共通の条件と手順。**結果そのものは docs/results/ の実装ごとのファイルにある** (現在は [gpt2-124m.md](results/gpt2-124m.md))。機械の側の性質は [machine.md](machine.md)、cumo の版ごとの所見は [cumo-history.md](cumo-history.md)。
 
 ## 比較条件
 
@@ -14,7 +14,7 @@
 
 ### 版
 
-下の比較表を測ったときの版。
+README の表を測ったときの版は README の「計測環境」にある。下は [results/gpt2-124m.md](results/gpt2-124m.md) の初期の比較表を測ったときの版で、経緯として残してある。
 
 | | 版 |
 |---|---|
@@ -30,7 +30,7 @@
 
 cumo は #287〜#292 で「スカラーを 0 次元配列にせず数値のままカーネルへ渡す」最適化が入り、#296 で左オペランドがスカラーの場合 (`0.5 * a`) も同じ経路に乗った。#297 では添字が確保していないインデックス配列を解放しなくなった。いずれも 0.5.10 に入っている。GPU 列はそのたびに測り直しているが、**#297 では tokens/sec は動いていない** (後述)。0.5.11 (#307〜#334) はこのワークロードの通る経路に触れていない。**0.6.0 (#335〜#364) は触れていて、キャッシュ無しの経路が実際に速くなった。** 0.7.0 (#365〜#422) は転置ビューのコピーを速くしたが、それはモデル読み込みの経路で、生成には出ない。**いずれも [results/gpt2-124m.md](results/gpt2-124m.md) に測定がある。**
 
-GPU 列は **released 0.7.0 の gem をそのまま入れて測った** (`gem install cumo -v 0.7.0`)。**この表は `gem install` から再現できる。** 0.5.10 から 0.5.11 までは同じ値で、0.6.0 でキャッシュ無しの 2 行が動き、0.7.0 では判別できなかった (いずれも [results/gpt2-124m.md](results/gpt2-124m.md))。0.5.10 は v0.5.9 の 40 コミット後で、PR 番号では #268〜#306 にあたる。このワークロードに効くのは #268〜#297 の側で、#298〜#306 はここが通らない経路の修正である (実際、4 条件の tokens/sec は開発中に使っていた `07f0af91` ビルドと中央値で +0.07〜+1.0% しか違わず、下のプロセス間の幅の内側にある)。**released 0.5.9 との差のほうは大きい。** #286 の時点では 64 トークン生成が 382.99 tok/s で、**同じ実装で測った 0.5.10 の 430.78** とは 1 割強の開きがある (内訳は docs/cumo-issues.md)。ただしこの行のプロセス間の幅は 10.5% あるので、開きの大きさは幅を踏まえて読むこと。
+GPU 列は **released 0.7.0 の gem をそのまま入れて測った** (`gem install cumo -v 0.7.0`)。**この表は `gem install` から再現できる。** 0.5.10 から 0.5.11 までは同じ値で、0.6.0 でキャッシュ無しの 2 行が動き、0.7.0 では判別できなかった (いずれも [results/gpt2-124m.md](results/gpt2-124m.md))。0.5.10 は v0.5.9 の 40 コミット後で、PR 番号では #268〜#306 にあたる。このワークロードに効くのは #268〜#297 の側で、#298〜#306 はここが通らない経路の修正である (実際、4 条件の tokens/sec は開発中に使っていた `07f0af91` ビルドと中央値で +0.07〜+1.0% しか違わず、下のプロセス間の幅の内側にある)。**released 0.5.9 との差のほうは大きい。** #286 の時点では 64 トークン生成が 382.99 tok/s で、**同じ実装で測った 0.5.10 の 430.78** とは 1 割強の開きがある (内訳は docs/cumo-history.md)。ただしこの行のプロセス間の幅は 10.5% あるので、開きの大きさは幅を踏まえて読むこと。
 
 **版が変わるたびに 4 条件を測り直している。** 0.5.11 は 0.5.10 と判別できず、**0.6.0 は KV キャッシュ無しの 2 行を実際に速くし** (256 トークンで +6.4%)、0.7.0 はまた判別できなかった。いずれも同一セッション内で 2 ビルドをインターリーブして測っている。
 
@@ -79,51 +79,101 @@ Ruby 側は途中で attention のヘッドをまとめる変更を入れたた�
 
 ## 再現方法
 
-### Llama 2 (stories110M)
+README の表はすべてここの手順で測った。版は README の「計測環境」にある。
 
-生成長は 64 と 200。**stories110M は 243 トークン目で BOS を出して停止する** ので、256 だと条件ごとの仕事量が揃わない。結果は [results/llama2-110m.md](results/llama2-110m.md)。
-
-```
-ruby script/download_llama2.rb                   # 重み・トークナイザ・run.c
-ruby script/llama2_dump.rb                       # 参照活性 (第一段階の検証用)
-ruby script/llama2_fixtures.rb                   # Python 側が照合するトークン列
-
-GPU=1 ruby script/llama2_generate.rb stories110M --length 64
-GPU=1 python/.venv/bin/python python/bench_llama2.py --impl numpy --length 64 --cache 1
-GPU=1 python/.venv/bin/python python/bench_llama2.py --impl torch --length 64 --cache 1
-```
-
-`CACHE=0` で KV キャッシュを無効にする (Ruby 側)。Python 側は `--cache 0`。**`bench_llama2.py` は計測の前にトークン列を fixture と照合し、ずれていたら数字を出さずに失敗する。**
-
-### GPT-2 124M
+### 準備
 
 ```
-rake download:gpt2                               # 重みの取得
-ruby script/gpt2_fixtures.rb                       # Ruby 側の正解トークン列を出力
+bundle config set --local with gpu
+CUMO_NVCC_GENERATE_CODE=arch=compute_120,code=sm_120 bundle install
+
 python3 -m venv python/.venv
 python/.venv/bin/pip install -r python/requirements.txt
-
-ruby script/gpt2_generate.rb --length 64                       # Numo
-GPU=1 ruby script/gpt2_generate.rb --length 64                 # Cumo
-python/.venv/bin/python python/bench_gpt2_sweep.py                   # NumPy
-OPENBLAS_NUM_THREADS=1 python/.venv/bin/python python/bench_gpt2_sweep.py
-GPU=1 python/.venv/bin/python python/bench_gpt2_sweep.py             # CuPy
-IDIOMATIC=1 GPU=1 python/.venv/bin/python python/bench_gpt2_sweep.py # CuPy、ヘッドをまとめた版
-
-# PyTorch は同梱 CUDA が版で変わるので index を指定して追加インストールする
+# PyTorch は同梱 CUDA が版で変わるので index を指定して別に入れる
 python/.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu130
-GPU=1 python/.venv/bin/python python/bench_gpt2_torch_sweep.py       # PyTorch eager
+
+rake download
+rake prepare                     # 変換した重み、参照値、Python 側が照合するトークン列
 ```
 
-`CACHE=0` で KV キャッシュを無効にする (Ruby 側)。Python 側は `bench_gpt2_sweep.py` が有無の両方を測る。
+`CUMO_NVCC_GENERATE_CODE` は初回起動の JIT を避けるためで、sm_120 以外の GPU では値を読み替える。
 
-バッチ生成は 3 実装とも `--batch` で指定する。**長さは fixture が固定している 64 か 256 にすること** (`bench_gpt2.py` は計測の前にトークン列を照合し、ずれていたら数字を出さずに失敗する)。
+### クロックを固定する
 
 ```
-GPU=1 ruby script/gpt2_generate.rb --batch 8 --length 256 --no-eot
-GPU=1 IDIOMATIC=1 python/.venv/bin/python python/bench_gpt2.py --impl numpy --batch 8 --length 256
-GPU=1 python/.venv/bin/python python/bench_gpt2.py --impl torch --batch 8 --length 256
+sudo nvidia-smi -lgc 3090
+sudo nvidia-smi -lmc 14001       # 2 つは 1 回ずつ別に実行する
+nvidia-smi --query-gpu=clocks.sm,clocks.mem --format=csv,noheader   # アイドルで SM 2790〜2805 MHz なら掛かっている
 ```
+
+終わったら `sudo nvidia-smi -rgc` と `sudo nvidia-smi -rmc` で戻す。計測の前には、GPU を使うプロセスが無いこと (`nvidia-smi --query-compute-apps=pid,name --format=csv`) と、load average が低いことも確かめる。CPU が埋まっていてもカーネルの投入が遅れて wall に出る。
+
+### 3 実装の表 (GPT-2、Llama 2、Mamba、Switch、Whisper)
+
+```
+bench/run.sh bench/three_impl.tsv tmp/bench
+python3 bench/aggregate.py bench/three_impl.tsv tmp/bench
+```
+
+`bench/three_impl.tsv` の 1 行が 1 条件で、Cumo、CuPy、PyTorch のコマンドを並べてある。`bench/run.sh` はそれに対照 (Cumo をもう一度) を足した 4 系列を 1 ラウンドにまとめ、系列の順序をラウンドごとに回転させて直列に走らせる。ラウンドは 11 (`ROUNDS=10` で 0〜10) で、`bench/aggregate.py` が先頭の 1 本を位置で捨てて 10 ラウンドで集計する。どれか 1 本でも失敗するか数字が取れなければ、バッチごと止まる。
+
+条件ごとの `--rounds` は、1 プロセスが 2 秒以上続けて回るように選んである。計測区間が短いとメモリクロックの段が上がる前に終わり、走行ごとに 9001 と 14001 のどちらかに落ちる (AGENTS.md)。Python 側は計測の前に生成したトークン列を fixture と照合し、ずれていれば数字を出さずに失敗する。
+
+条件は 18 本のバッチで測り、幅が 8% を超えた条件だけ `--rounds` を上げて測り直した。`bench/three_impl.tsv` はその最終的なコマンドである (経緯は [cumo-history.md](cumo-history.md) の「3 実装の表を 0.10.0 で測り直した」)。
+
+### int8 の表
+
+3 実装の表と同じ 4 系列の手順で、モデルだけを `stories110M_q80` にした。2 条件をインターリーブして 10 ラウンド。結果と経緯は [results/llama2-int8.md](results/llama2-int8.md) の「3 実装を並べる」。
+
+```
+GPU=1 ruby script/llama2_generate.rb stories110M_q80 --length 64
+GPU=1 python/.venv/bin/python python/bench_llama2.py --model stories110M_q80 --length 64 --cache 1
+GPU=1 python/.venv/bin/python python/bench_llama2.py --impl torch --model stories110M_q80 --length 64 --cache 1
+```
+
+### ResNet-18 の表
+
+1 つ目の表 (`shift` と `unfold`) は、Cumo の 2 綴り、CuPy の 2 綴り、対照 (Cumo `unfold`) の 5 条件をインターリーブして 11 ラウンド回し、先頭を捨てて 10 ラウンド。`--inner` は 1 条件が約 2 秒になる回数にする。
+
+```
+GPU=1 ruby script/resnet_classify.rb --spelling unfold --inner 120 --no-check
+GPU=1 python/.venv/bin/python python/bench_resnet.py --spelling unfold --inner 120
+```
+
+2 つ目の表 (cuDNN) は 6 条件、13 ラウンドの先頭を捨てて 12 ラウンドで、上限の既定が 8 MiB で畳み込みが TF32 に載りうる版の cumo (0.9.0 以前) で測った。ワークスペースの上限は `CUMO_CUDNN_MAX_WORKSPACE_SIZE` (バイト数)、PyTorch の TF32 は `--no-tf32` で切る。`--inner` はこちらも 1 条件が約 2 秒になる回数にする。cumo 0.10.0 以降は上限の既定が 128 MiB で、TF32 は `CUMO_ALLOW_TF32=1` のときだけ使う。
+
+```
+GPU=1 ruby script/resnet_classify.rb --spelling cudnn --inner 250 --no-check
+GPU=1 CUMO_CUDNN_MAX_WORKSPACE_SIZE=1073741824 ruby script/resnet_classify.rb --spelling cudnn --inner 250 --no-check
+GPU=1 python/.venv/bin/python python/bench_resnet.py --impl torch --inner 250
+GPU=1 python/.venv/bin/python python/bench_resnet.py --impl torch --inner 250 --no-tf32
+```
+
+結果と経緯は [results/resnet-18.md](results/resnet-18.md) の「3 実装を並べる」と「cuDNN のワークスペースが 8 MiB に制限されていた」。
+
+### サンプリングの表
+
+GPT-2 の長さ 900 で、貪欲法、`--top-k 50`、`--top-p 0.9`、両方、両方 (ソートを共有しない旧版)、対照 (貪欲法) の 6 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。計測用の生成は EOT で止まらない。README の表に載せたのは旧版を除く 5 条件である。
+
+```
+GPU=1 ruby script/gpt2_generate.rb --length 900
+GPU=1 ruby script/gpt2_generate.rb --length 900 --top-k 50 --top-p 0.9
+```
+
+結果と経緯は [results/gpt2-124m.md](results/gpt2-124m.md) の「サンプリング」。
+
+### 学習の表
+
+1 ステップの区間ごとに、Cumo と PyTorch の 3 区間 (forward、backward、update) と対照の 7 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。1 回は 40 ステップで、先頭の 1 ステップを除いた平均を取る。README の表は、その s/step の逆数である。
+
+```
+GPU=1 ruby script/gpt2_train.rb --steps 40 --stop-after backward
+GPU=1 python/.venv/bin/python python/bench_gpt2_train.py --impl torch --steps 40 --stop-after backward
+```
+
+勾配と損失の一致 (関門 B と C) は `rake test` が確かめる。結果と経緯は [results/gpt2-124m.md](results/gpt2-124m.md) の「学習」。
+
+### カーネル数
 
 decode 1 トークンあたりのカーネル数は nsys で数える。`--no-bench` を付けて生成 1 回だけにすると、差の割り算がちょうど 32 になる。**2 本とも 40 トークン以上にすること** (短いほうが冷えていると時間が過小に出る。理由は AGENTS.md の計測の作法 8 番)。
 

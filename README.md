@@ -223,10 +223,13 @@ GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.
 
 次に何を作るかの候補は [docs/idea.md](docs/idea.md) にある。モデルとは限らない — バッチ生成のように、既にあるモデルへ足すほうが安く広く踏めることもある。
 
-## 動かす
+## 実行手順
 
 ```
-bundle install
+bundle install                                # Numo だけ (CPU)
+bundle config set --local with gpu            # Cumo も入れるとき (CUDA toolkit が要る)
+CUMO_NVCC_GENERATE_CODE=arch=compute_120,code=sm_120 bundle install
+
 rake download                                 # 6 モデルの重みとトークナイザ (Ruby と curl だけで済む)
 rake prepare                                  # 変換と参照値まで作り、テストが読むものを全部揃える
 
@@ -237,27 +240,33 @@ ruby script/gpt2_generate.rb --length 256          # GPT-2、EOT 1 個から貪�
 GPU=1 ruby script/llama2_generate.rb stories110M --length 200
 GPU=1 ruby script/llama2_generate.rb stories110M_q80 --length 128   # int8
 GPU=1 ruby script/mamba_generate.rb --length 256
-
-GPU=1 ruby script/gpt2_train.rb                    # GPT-2 を AdamW で 10 ステップ
+GPU=1 ruby script/switch_generate.rb --length 72
+GPU=1 ruby script/whisper_generate.rb              # 参照から取ったメルを書き起こす
 GPU=1 ruby script/resnet_classify.rb --spelling cudnn   # ResNet-18 で 16 枚を分類
+GPU=1 ruby script/gpt2_train.rb                    # GPT-2 を AdamW で 10 ステップ
 ```
+
+cumo は Gemfile の任意のグループ `gpu` に入れてあり、素の `bundle install` では入らない。`CUMO_NVCC_GENERATE_CODE` は初回起動の JIT を避けるためのもので、sm_120 以外の GPU では値を読み替える。
 
 `rake prepare` は Python と C コンパイラを使う。Mamba と Switch は配布された重みを変換し、Llama 2 と Mamba の参照値は C の参照実装から、Switch・Whisper・ResNet-18 の参照値は transformers から取る。Python は `python/.venv` を見る (`PYTHON=...` で差し替えられる) ので、先に `python/requirements.txt` を入れておく (torch だけは CUDA の版に合わせて別に入れる。手順はファイルの中にある)。揃ったものは作り直さないので何度叩いてもよく、`rake prepare:switch` のようにモデルごとにも呼べる。data/ は全部で約 7 GB になる。
 
-ResNet-18 で cuDNN を使うなら、cumo 0.9.0 まではワークスペースの上限を上げる (`CUMO_CUDNN_MAX_WORKSPACE_SIZE=268435456`)。既定の 8 MiB では良いアルゴリズムが探索の候補に入らず、上げると 1.50 倍になる。cumo の HEAD では既定 128 MiB なので、何も立てなくてよい ([resnet-18.md](docs/results/resnet-18.md))。
-
 BPE エンコーダは実装していないので、プロンプトはトークン id で渡す (`--tokens 15496,11,995`)。温度・top-k・top-p も入っている (`--top-k 50 --top-p 0.9 --seed 42`)。乱数はホストの `Random` から引くので、両バックエンドが同じ列を出す。
 
-必要なものは Ruby (4.0.7 で検証)、`numo-narray-alt`、`numo-linalg-alt` (無くても動くが同じ GEMM が 27 倍遅くなる)、`test-unit`、`rake`。GPU で動かすなら `cumo` を別途入れる (CUDA toolkit が要るので Gemfile ではコメントアウトしてある)。int8 の数字を再現するなら cumo は 0.9.0 以降が要る ([llama2-int8.md](docs/results/llama2-int8.md))。GPU の無い環境でも全テストが通る状態を保っている。
+ResNet-18 の `cudnn` は、cumo 0.10.0 からワークスペースの上限が既定 128 MiB になり、何も立てなくても良いアルゴリズムが選ばれる。0.9.0 までは既定が 8 MiB なので `CUMO_CUDNN_MAX_WORKSPACE_SIZE=268435456` を立てる (上げると 1.50 倍)。単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけで、速くなる代わりに logits が 2 桁動く ([resnet-18.md](docs/results/resnet-18.md))。
+
+必要なものは Ruby (4.0.7 で検証)、`numo-narray-alt`、`numo-linalg-alt` (無くても動くが同じ GEMM が 27 倍遅くなる)、`test-unit`、`rake`。GPU で動かすなら加えて `cumo` と CUDA toolkit。int8 の数字を再現するなら cumo は 0.9.0 以降が要る ([llama2-int8.md](docs/results/llama2-int8.md))。GPU の無い環境でも全テストが通る状態を保っている。
+
+表の数字を測った手順 (Python 側の準備、クロックの固定、3 実装を並べるバッチ `bench/run.sh`、表ごとのコマンド) は [docs/method.md](docs/method.md) の「再現方法」にある。
 
 より詳しい使い方、環境変数、内部の約束事は次にある。
 
 | 読みたいもの | 場所 |
 |---|---|
-| 計測の条件と手順 | [docs/method.md](docs/method.md) |
+| 計測の条件と手順、表を再現するコマンド | [docs/method.md](docs/method.md) |
 | この機械の癖 (クロックの段、帯域、nsys) | [docs/machine.md](docs/machine.md) |
 | 重み・トークナイザのファイル形式 (出典つき) | [docs/checkpoint-format-gpt2.md](docs/checkpoint-format-gpt2.md)、[docs/tokenizer-format-gpt2.md](docs/tokenizer-format-gpt2.md)、[同 llama2](docs/checkpoint-format-llama2.md) |
-| Cumo で踏んだ非互換 | [docs/cumo-issues.md](docs/cumo-issues.md) |
+| cumo の未対応の問題 | [docs/cumo-issues.md](docs/cumo-issues.md) |
+| cumo で踏んだ問題の経緯 (解決済みを含む) | [docs/cumo-history.md](docs/cumo-history.md) |
 | Numo と Cumo の差異、計測とテストの作法 | [AGENTS.md](AGENTS.md) |
 
 ## 構成
@@ -269,6 +278,7 @@ lib/narray_llm/          共有の部品 (backend / ops / generator / sampler / 
 script/                  取得・フォワード比較・生成・学習・分類のランナー
 test/                    各段階の受け入れテストと部品のユニットテスト
 python/                  NumPy / CuPy / PyTorch の比較実装とベンチのドライバ
+bench/                   3 実装をインターリーブして回すバッチと集計、条件の一覧
 docs/                    形式の仕様、計測結果、機械の特性、段階ごとの計画 (plans/)
 data/                    取得した重み (.bin と safetensors) の置き場 (git 管理外)
 ```
