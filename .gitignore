@@ -1,0 +1,45 @@
+# 重みと参照値。`rake download` で取得し、`rake prepare` で変換と参照値まで揃える。
+# 合計 7GB 近くあるので追跡しない。
+/data/*
+!/data/.gitkeep
+*.part
+
+# Python の仮想環境
+/python/.venv/
+__pycache__/
+*.pyc
+
+# Bundler
+# Gemfile は numo-narray-alt / numo-narray のどちらでも動くようにしてあるので
+# lock は固定しない。
+/.bundle/
+/vendor/
+Gemfile.lock
+
+# ベンチ・プロファイルの出力
+/tmp/
+*.log
+*.nsys-rep
+*.ncu-rep
+
+# archify が出す単体 HTML。800KB あって図を直すたびに丸ごと差し替わるので
+# 追跡しない。元データ (docs/architecture.archify.json) と README に貼る
+# PNG は追跡する。作り方は README の「構成」にある。
+/docs/architecture.html
+
+# エディタ・OS
+*.swp
+*.swo
+*~
+.DS_Store
+/.idea/
+/.vscode/
+/.ruby-lsp/
+
+# bundler のローカル設定 (gpu グループの有効化など)
+/.bundle/
+
+# mamba_dump に "-" を渡すと活性を書かない。うっかり作られたファイル避け。
+/-
+# フラグを位置引数として受け取ってしまったときに出来るファイル避け。
+/--*

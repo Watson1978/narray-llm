@@ -1,0 +1,29 @@
+# CPU 側。numpy は scipy-openblas を同梱したホイールで入る。
+numpy==2.5.2
+
+# BLAS のスレッド数を実行時に読み書きするために使う (公平性の報告用)。
+threadpoolctl==3.6.0
+
+# erf。numpy は持っていないので、Whisper の gelu のために要る。GPU 側は cupy に
+# 同梱の cupyx.scipy.special が同じものを出すので、追加の依存は無い。
+scipy==1.18.1
+
+# GPU 側は CUDA のメジャーバージョンに合わせて選ぶ。この環境は CUDA 13 系。
+#   CUDA 13.x -> cupy-cuda13x
+#   CUDA 12.x -> cupy-cuda12x
+# 併記すると片方しか入らないのでコメントにしてある。GPU で測るときだけ入れる。
+cupy-cuda13x==14.2.0
+
+# PyTorch (eager fp32 の参照点)。PyPI の既定ホイールは同梱 CUDA が版で変わるので、
+# CUDA のメジャーバージョンに合う index から入れる。この行は pip install -r では
+# 効かないので、別途 --index-url を付けて実行すること。
+#
+#   CUDA 13.x: pip install torch --index-url https://download.pytorch.org/whl/cu130
+#   CUDA 12.x: pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   CPU のみ : pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# この計測で使ったのは torch==2.13.0+cu130
+
+safetensors==0.8.0
+transformers==5.16.1
+pillow==12.3.0

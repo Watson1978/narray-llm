@@ -1,0 +1,101 @@
+{
+  "model": "microsoft/resnet-18",
+  "images": [
+    {
+      "image": "n01440764_tench",
+      "class": 0,
+      "label": "tench, Tinca tinca",
+      "probability": 0.949751
+    },
+    {
+      "image": "n01820546_lorikeet",
+      "class": 90,
+      "label": "lorikeet",
+      "probability": 0.999719
+    },
+    {
+      "image": "n02033041_dowitcher",
+      "class": 142,
+      "label": "dowitcher",
+      "probability": 0.877505
+    },
+    {
+      "image": "n02096585_Boston_bull",
+      "class": 195,
+      "label": "Boston bull, Boston terrier",
+      "probability": 0.931172
+    },
+    {
+      "image": "n02123045_tabby",
+      "class": 285,
+      "label": "Egyptian cat",
+      "probability": 0.460267
+    },
+    {
+      "image": "n02325366_wood_rabbit",
+      "class": 330,
+      "label": "wood rabbit, cottontail, cottontail rabbit",
+      "probability": 0.951407
+    },
+    {
+      "image": "n02749479_assault_rifle",
+      "class": 413,
+      "label": "assault rifle, assault gun",
+      "probability": 0.587645
+    },
+    {
+      "image": "n03000684_chain_saw",
+      "class": 634,
+      "label": "lumbermill, sawmill",
+      "probability": 0.765668
+    },
+    {
+      "image": "n03272010_electric_guitar",
+      "class": 546,
+      "label": "electric guitar",
+      "probability": 0.956306
+    },
+    {
+      "image": "n03633091_ladle",
+      "class": 618,
+      "label": "ladle",
+      "probability": 0.997881
+    },
+    {
+      "image": "n03976467_Polaroid_camera",
+      "class": 732,
+      "label": "Polaroid camera, Polaroid Land camera",
+      "probability": 0.957013
+    },
+    {
+      "image": "n04204347_shopping_cart",
+      "class": 791,
+      "label": "shopping cart",
+      "probability": 0.996129
+    },
+    {
+      "image": "n04398044_teapot",
+      "class": 849,
+      "label": "teapot",
+      "probability": 0.975001
+    },
+    {
+      "image": "n04550184_wardrobe",
+      "class": 894,
+      "label": "wardrobe, closet, press",
+      "probability": 0.53708
+    },
+    {
+      "image": "n07747607_orange",
+      "class": 950,
+      "label": "orange",
+      "probability": 0.929639
+    },
+    {
+      "image": "n09472597_volcano",
+      "class": 980,
+      "label": "volcano",
+      "probability": 0.995206
+    }
+  ]
+}

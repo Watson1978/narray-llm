@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "narray-llm のアーキテクチャ",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-path",
+        "label": "生成の主経路",
+        "focus": [
+          "cli",
+          "generator",
+          "cmodels",
+          "ops",
+          "xm"
+        ],
+        "note": "プロンプトから NArray の演算に届くまでを追う。"
+      },
+      {
+        "id": "backend-switch",
+        "label": "バックエンドの切り替え",
+        "focus": [
+          "ops",
+          "xm",
+          "numo",
+          "cumo"
+        ],
+        "note": "同じコードが XM と XF の差し替えだけで CPU と GPU、fp32 と半精度で動く。"
+      },
+      {
+        "id": "verification",
+        "label": "重みと検証",
+        "focus": [
+          "data",
+          "loader",
+          "python",
+          "cmodels",
+          "hfmodels"
+        ],
+        "note": "C の単一ファイルか transformers の出力と、トークン列やクラス番号を突き合わせる。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "script/",
+      "sublabel": "generate · train · classify",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "GPU=1 で Cumo"
+    },
+    {
+      "id": "data",
+      "type": "database",
+      "label": "data/",
+      "sublabel": ".bin · safetensors",
+      "pos": [
+        40,
+        560
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "python",
+      "type": "external",
+      "label": "python/",
+      "sublabel": "NumPy · CuPy · PyTorch",
+      "pos": [
+        40,
+        700
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "training",
+      "type": "backend",
+      "label": "Backward · AdamW",
+      "sublabel": "GPT-2 の学習",
+      "pos": [
+        270,
+        130
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "generator",
+      "type": "backend",
+      "label": "Generator",
+      "sublabel": "Sampler · KVCache",
+      "pos": [
+        270,
+        330
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "loader",
+      "type": "backend",
+      "label": "Checkpoint / Tokenizer",
+      "sublabel": "BinaryIO · Safetensors",
+      "pos": [
+        270,
+        560
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "cmodels",
+      "type": "backend",
+      "label": "GPT-2 · Llama 2 · Mamba",
+      "sublabel": "C の単一ファイルが参照",
+      "pos": [
+        580,
+        330
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "hfmodels",
+      "type": "backend",
+      "label": "Switch · Whisper · ResNet-18",
+      "sublabel": "transformers が参照",
+      "pos": [
+        580,
+        560
+      ],
+      "size": [
+        210,
+        64
+      ]
+    },
+    {
+      "id": "ops",
+      "type": "backend",
+      "label": "Ops",
+      "sublabel": "層の部品と融合カーネル",
+      "pos": [
+        860,
+        330
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "xm",
+      "type": "backend",
+      "label": "XM · XF",
+      "sublabel": "バックエンドと dtype",
+      "pos": [
+        1070,
+        330
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "numo",
+      "type": "external",
+      "label": "Numo::NArray",
+      "sublabel": "CPU · OpenBLAS",
+      "pos": [
+        920,
+        740
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "cumo",
+      "type": "external",
+      "label": "Cumo",
+      "sublabel": "GPU · CUDA · cuDNN",
+      "pos": [
+        1130,
+        740
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "lib/narray_llm",
+      "wraps": [
+        "training",
+        "generator",
+        "loader",
+        "cmodels",
+        "hfmodels",
+        "ops",
+        "xm"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "cli-to-generator",
+      "from": "cli",
+      "to": "generator",
+      "label": "プロンプト",
+      "variant": "emphasis"
+    },
+    {
+      "id": "generator-to-cmodels",
+      "from": "generator",
+      "to": "cmodels",
+      "label": "decode 1 トークン",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-to-training",
+      "from": "cli",
+      "to": "training",
+      "label": "学習ステップ",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "training-to-cmodels",
+      "from": "training",
+      "to": "cmodels",
+      "label": "forward / backward",
+      "toSide": "top"
+    },
+    {
+      "id": "data-to-loader",
+      "from": "data",
+      "to": "loader",
+      "label": "重み"
+    },
+    {
+      "id": "loader-to-cmodels",
+      "from": "loader",
+      "to": "cmodels",
+      "label": ".bin",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "loader-to-hfmodels",
+      "from": "loader",
+      "to": "hfmodels",
+      "label": "safetensors"
+    },
+    {
+      "id": "python-to-data",
+      "from": "python",
+      "to": "data",
+      "label": "同じ重みを読む",
+      "variant": "dashed"
+    },
+    {
+      "id": "cmodels-to-ops",
+      "from": "cmodels",
+      "to": "ops",
+      "variant": "emphasis"
+    },
+    {
+      "id": "hfmodels-to-ops",
+      "from": "hfmodels",
+      "to": "ops"
+    },
+    {
+      "id": "ops-to-xm",
+      "from": "ops",
+      "to": "xm",
+      "label": "XF",
+      "variant": "emphasis"
+    },
+    {
+      "id": "xm-to-numo",
+      "from": "xm",
+      "to": "numo",
+      "label": "既定",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "xm-to-cumo",
+      "from": "xm",
+      "to": "cumo",
+      "label": "GPU=1",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "一本の実装が CPU と GPU で動く",
+      "items": [
+        "Numo / Cumo を直接書かず、XM 経由で書く",
+        "既定は Numo (CPU)、GPU=1 で Cumo",
+        "XF で fp32 / fp16 / bf16 を切り替える"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "6 モデルが Ops を共有する",
+      "items": [
+        "GPT-2・Llama 2・Mamba は Generator で生成し、Sampler と KVCache を使う",
+        "Switch・Whisper は自前の生成ループ、ResNet-18 は分類",
+        "Ops は cumo の融合カーネルがあれば使い、無ければ元の式に落ちる"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "正しさは参照の出力が決める",
+      "items": [
+        "llm.c・llama2.c・mamba.c と、transformers の 2 系統",
+        "受け入れ条件はトークン列かクラス番号の完全一致",
+        "Python の比較実装が同じ重みを読み、速さを突き合わせる"
+      ]
+    }
+  ]
+}
