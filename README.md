@@ -1,6 +1,6 @@
 # narray-llm
 
-7 モデルの推論と GPT-2 124M の学習を [Numo::NArray](https://github.com/ruby-numo/numo-narray) / [Cumo](https://github.com/sonots/cumo) だけで実装するプロジェクト。深層学習フレームワークは使わない。
+6 モデル (+ Llama 2 の int8) の推論と GPT-2 124M の学習を [Numo::NArray](https://github.com/ruby-numo/numo-narray) / [Cumo](https://github.com/sonots/cumo) だけで実装するプロジェクト。深層学習フレームワークは使わない。
 
 重みと参照値は [llm.c](https://github.com/karpathy/llm.c) と [llama2.c](https://github.com/karpathy/llama2.c) のものをそのまま使い、各段階の関門を参照実装とのトークン列の完全一致に置く。学習だけは完全一致にできないので、そこは llm.c 自身の許容誤差を借りている (下記)。同じコードが `XM` 定数の差し替えだけで CPU (Numo) と GPU (Cumo) の両方で動く。
 
@@ -9,7 +9,19 @@
   <img alt="narray-llm のアーキテクチャ: script/ から Generator と 6 つのモデル、Ops、XM と XF を経て Numo と Cumo に届くまで" src="docs/architecture-light.png">
 </picture>
 
+## In English
+
+narray-llm implements six models in Ruby: GPT-2 124M, Llama 2 110M (also with int8 weights), Mamba 130M, Switch Transformer base-8, Whisper tiny and ResNet-18. It also trains GPT-2 124M with AdamW. It uses only Numo::NArray on the CPU and Cumo on the GPU, with no deep learning framework. The same code runs on both backends.
+
+Each model must match its reference implementation exactly. For the language models, that means the same token sequence as llm.c, llama2.c, mamba.c or transformers. Training uses the tolerances of llm.c itself.
+
+The tables below compare Cumo with CuPy and PyTorch ports of the same models. They were measured on an RTX 5070 Ti Laptop GPU with locked clocks. In one-token decode, Cumo is 3.1 to 3.5 times as fast as CuPy and 1.02 to 1.35 times as fast as PyTorch. Where matrix multiplication dominates (generation without a KV cache, encoders), Cumo runs at 0.87 to 1.02 times the speed of PyTorch. With int8 weights, it is 2.7 times as fast as PyTorch. PyTorch is faster on ResNet-18 and on training, where Cumo reaches 0.60 times its speed.
+
+The project exists to exercise Numo and Cumo on real workloads. Several performance problems found here have been fixed in Cumo itself. The measurement notes under docs/results/ are in Japanese.
+
 ## 数字
+
+要約すると、1 トークンずつ生成する decode では Cumo が CuPy の 3.1〜3.5 倍、PyTorch の 1.02〜1.35 倍速い。行列積が支配する条件 (KV キャッシュ無しの生成、encode) では PyTorch の 0.87〜1.02 倍で、並ぶか少し負ける。int8 では PyTorch の 2.7 倍。ResNet-18 と学習は PyTorch が速く、学習は 0.60 倍。
 
 同じ重み・同じ手順で Python の 3 実装と並べたもの。5 実装すべてが同一のトークン列を出すことを関門にしてある。
 
@@ -267,7 +279,7 @@ data/                    取得した重み (.bin と safetensors) の置き場 
 
 ## 謝辞
 
-C の単一ファイル参照に依っている。GPT-2 と学習は Andrej Karpathy の [llm.c](https://github.com/karpathy/llm.c)、Llama 2 と int8 は同じく [llama2.c](https://github.com/karpathy/llama2.c) (どちらも MIT)、Mamba は kroggen の [mamba.c](https://github.com/kroggen/mamba.c)。重み・参照値・ファイル形式をそのまま使い、関門もそれらの出力に置いている。
+C の単一ファイル参照に依っている。GPT-2 と学習は Andrej Karpathy の [llm.c](https://github.com/karpathy/llm.c)、Llama 2 と int8 は同じく [llama2.c](https://github.com/karpathy/llama2.c) (どちらも MIT)、Mamba は kroggen の [mamba.c](https://github.com/kroggen/mamba.c) (README に MIT と記載)。重み・参照値・ファイル形式をそのまま使い、関門もそれらの出力に置いている。
 
 C 参照が無いモデルは transformers を参照にした。Switch base-8、Whisper tiny、ResNet-18 の 3 つで、中間活性は再実装ではなく実モデルへの forward hook で取っているので、参照が自前の思い込みからずれない。
 
