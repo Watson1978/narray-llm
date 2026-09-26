@@ -1,18 +1,6 @@
 # cumo の未対応の問題
 
-このリポジトリで踏んで、cumo の側でまだ直っていない問題。2026-09-23 に cumo 0.10.0 と master (`ba27577a`) で残っていることを確かめた。解決した問題とこれまでの経緯は [cumo-history.md](cumo-history.md) にある。
-
-## `cumsum` が 8192 要素未満でホストへ同期する
-
-`CUMO_SHOW_WARNING=ON` で次の警告が出る。cumo 自身が `FIXME` と書いている。
-
-```
-Warning: FIXME: Method "cumsum" for dtype "sfloat" synchronizes with CPU.
-```
-
-`ext/cumo/narray/gen/tmpl/cum.c` は、要素数が `CUMO_CUM_MIN_KERNEL_SIZE` (`ext/cumo/include/cumo/template.h:74` の 8192) 未満だとデバイス全体を同期してからホストのループで計算する。8192 という値の根拠は cumo 側も測っていない。
-
-Switch の MoE で同点の expert を 1 つに絞る走査に使って踏んだ (1 トークンあたり 6 回の同期)。走る軸が短いなら、厳密下三角行列との積で同じ値が出る。Switch はそう書き換えて 6.4% 速くなったが、その差が同期の値段だけかどうかは分けていない。詳細は [cumo-history.md](cumo-history.md) の「`cumsum` はホストへ同期する」と [results/switch-base-8.md](results/switch-base-8.md)。
+このリポジトリで踏んで、cumo の側でまだ直っていない問題。2026-09-27 に cumo の master (`d475ab60`) で棚卸しした。解決した問題とこれまでの経緯は [cumo-history.md](cumo-history.md) にある。
 
 ## NArray を添字にした gather が同期する
 
@@ -45,13 +33,28 @@ ResNet-18 の `unfold` で窓行列を組み立てるコピーが、3x3 の 16 �
 
 別セッションが同じ形を 4 通りに分けると、両側がストライドの形だけが遅かった (1 タップあたり 0.0494 ms。片側だけストライドなら 0.0368 ms と 0.0260 ms、両側が連続なら 0.0187 ms)。ResNet-18 の `unfold` で Cumo が CuPy に 7.6% 負ける差のうち、54% がこの組み立てである。詳細は [results/resnet-18.md](results/resnet-18.md) の「7.3% の行き先は分かった」。
 
-## 行列積が支配する encode で PyTorch に負ける。出どころは未分離
+**master では大きく改善したが、閉じるには確認が要る。** ストライドのあるビューのコピーを速くした #547 と #548 のあと、`fb40f7cf` で ResNet-18 の `unfold` を 4 系列 (Cumo、CuPy、PyTorch、対照) で 6 ラウンド測ると、Cumo / CuPy が 1.064 で、6 回とも Cumo が速かった (2026-09-26)。0.10.0 のときの 0.929 は別のセッションの数字なので、差の大きさは読まない。窓の組み立てだけを CuPy と並べて測っていないので、この問題はまだ閉じていない。
 
-Whisper tiny の encode (1500 位置) で、PyTorch が Cumo の 1.15 倍速い (README の表では Cumo / PyTorch が 0.869、10 ラウンドすべてで PyTorch が速い)。同じ表で Cumo は CuPy の 1.27 倍速いので、PyTorch だけが速い。
+## 行列積が支配する encode で PyTorch に負ける
+
+Whisper tiny の encode (1500 位置) で、cumo 0.10.0 では PyTorch が Cumo の 1.15 倍速かった (README の表では Cumo / PyTorch が 0.869、10 ラウンドすべてで PyTorch が速い)。同じ表で Cumo は CuPy の 1.27 倍速いので、PyTorch だけが速い。
+
+**master (`d475ab60`) で差は 1.068 倍まで縮んだ。** 別セッションが GEMM 以外のカーネルを名前ごとに並べると、softmax、layernorm、加算、GELU が PyTorch より遅く、softmax (#554) と layernorm / rmsnorm (#555) を書き直した。`fb40f7cf` と HEAD と PyTorch を同じバッチで 6 ラウンド測った結果 (2026-09-27)。
+
+| 比 | 中央値 (範囲) | 1 を超えた回 |
+|---|---|---|
+| HEAD / `fb40f7cf` | 1.0619 (1.0576〜1.0663) | 6/6 |
+| HEAD / PyTorch | 0.9362 (0.9328〜0.9381) | 0/6 |
+| `fb40f7cf` / PyTorch | 0.8803 (0.8775〜0.8870) | 0/6 |
+| 対照 (HEAD / HEAD) | 0.9994 (0.9943〜1.0004) | 1/6 |
+
+HEAD の +6.2% は、softmax 単独の +4.8% と layernorm 単独の +1.4% (どちらも同じバッチの対照つき) を掛けた 1.063 と合う。**残りの約 7% は加算と GELU で、こちらでは測っていない** (別セッションの内訳)。加算は、L2 に収まる大きさで 4 要素ずつ読み書きすると 1.3〜1.55 倍速いことが単体で分かっている。
+
+以下は 0.10.0 のときに調べたことで、差の大部分が GEMM の外にあることの裏付けになっている。
 
 3 実装とも畳み込みを行列積で書いてあり、GEMM は 1 encode あたり 78 本で一致し、Cumo と PyTorch は cutlass のタイルと grid まで同じだった。GPU 時間を 3 組取ると、GEMM の時間は区別できず、GEMM 以外 (Cumo 139 本、PyTorch 99 本) は区別できた。ただし nsys の時間なので、wall の差をそこへ帰属させてはいない。
 
-cumo 側の候補は 4 つ挙がっていて、どれも測っていない。
+GEMM の側の候補も 4 つ挙がっていたが、どれも測っていない。差が GEMM の外にあると分かったので、後回しになっている。
 
 1. 2 次元 1 本の行列積でも `gemmStridedBatched` を通す (`gen/tmpl/gemm.c`)
 2. `CUBLAS_GEMM_DEFAULT` を固定で渡す (PyTorch は cuBLASLt のヒューリスティクスを使う)
