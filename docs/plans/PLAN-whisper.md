@@ -280,7 +280,7 @@ script/
 
 **GEMM は 3 実装とも 78 本で一致し、Cumo と PyTorch は cutlass のタイルと grid まで同じ。** **PyTorch は融合していない。** **GPU 時間も 3 組取ったが、GEMM の時間はペア比 0.997〜1.220 で 1 をまたぐ** (Cumo 自身が 3 組で 21% 動く)。**1 組目だけなら「GEMM が 21% 遅い」と書けた。** **15.3% の帰属は未分離。**
 
-詳細は [docs/results/whisper-tiny.md](../results/whisper-tiny.md) と [docs/cumo-issues.md](../cumo-issues.md)。
+詳細は [docs/results/whisper-tiny.md](../results/whisper-tiny.md) と [docs/cumo-history.md](../cumo-history.md)。
 
 ## 未確認
 

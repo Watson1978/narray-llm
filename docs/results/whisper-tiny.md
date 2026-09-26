@@ -120,7 +120,7 @@ nsys の差分法 (`--inner 20` と `--inner 10` の差 ÷ 30 encode)。**回数
 
 **差が見えるのは GEMM 以外のほうである** (Cumo 139 対 PyTorch 99、1 encode あたり 40 本)。
 
-**同じ profile から GPU 時間も差分で出し、3 組取った。** **GEMM の時間は区別できない** (Cumo/PyTorch のペア比 0.997〜1.220 で 1 をまたぐ。Cumo 自身の GEMM 時間が 3 組で 21% 動く)。**GEMM 以外は 3 組とも重ならない** (1.348〜2.027)。**1 組目だけを見ると「GEMM が 21% 遅い」と読めたが、3 組目では同じ値になった。** 内訳は [../cumo-issues.md](../cumo-issues.md)。
+**同じ profile から GPU 時間も差分で出し、3 組取った。** **GEMM の時間は区別できない** (Cumo/PyTorch のペア比 0.997〜1.220 で 1 をまたぐ。Cumo 自身の GEMM 時間が 3 組で 21% 動く)。**GEMM 以外は 3 組とも重ならない** (1.348〜2.027)。**1 組目だけを見ると「GEMM が 21% 遅い」と読めたが、3 組目では同じ値になった。** 内訳は [../cumo-history.md](../cumo-history.md)。
 
 **それでも 15.3% をここに帰属させない。** nsys の duration は wall の仕事とは限らず、**その演算を消して wall が動くまで行の時間は信じない** (計測の作法 9)。**時間の帰属は未分離である。**
 
@@ -247,7 +247,7 @@ nsys stats --force-export=true --report cuda_gpu_trace    --format csv enc20.nsy
 
 - **encode で PyTorch が 15% 出る理由。** GEMM の本数は 3 実装とも同じと分かった (上記) ので **そこではない** が、時間の帰属は分けていない
 - **CuPy と PyTorch の同期の回数** (カーネル数は上記で数えた)
-- **`gemmStridedBatched` を batch=1 で通す費用。** cumo は 2 次元 1 本の行列積もこの道を通る。素の `cublasSgemm` との差は測っていない ([../cumo-issues.md](../cumo-issues.md) に候補を 4 つ並べてある。**4 つとも未計測**)
+- **`gemmStridedBatched` を batch=1 で通す費用。** cumo は 2 次元 1 本の行列積もこの道を通る。素の `cublasSgemm` との差は測っていない ([../cumo-history.md](../cumo-history.md) に候補を 4 つ並べてある。**4 つとも未計測**)
 - **`unfold` の換算率が 0.36 と低い理由。** encoder が投入律速でないためだと思われるが、測っていない
 - **PyTorch で `unfold` が効くかどうか。** 向きは 8/10 で揃ったがペア比が 1 をまたぐ。対照の幅 4% が効き幅 0.8% より大きく、**この幅では決まらない**
 - **実際の音声。** 波形は式で作ったもので、**「動くこと」は示せているが「書き起こせること」は示していない**

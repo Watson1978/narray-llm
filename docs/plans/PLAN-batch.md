@@ -13,7 +13,7 @@ GPT-2 124M の decode を batch > 1 で回せるようにする。**目的は cu
 | **KV キャッシュが 3 次元になる** | `[maxT, C]` の 2 次元 |
 | **attention の縮約軸が 1 本増える** | `[t, nh, hs]` まで |
 
-**そして今日の宿題に直接つながる。** Whisper の encode で PyTorch が 15.3% 速い件の候補①は「cumo は batch=1 でも `gemmStridedBatched` を通す」だった ([docs/cumo-issues.md](../cumo-issues.md))。**batch > 1 の実使用が 1 つも無いので、この API が本来の使い方で速いのかも分かっていない。**
+**そして今日の宿題に直接つながる。** Whisper の encode で PyTorch が 15.3% 速い件の候補①は「cumo は batch=1 でも `gemmStridedBatched` を通す」だった ([docs/cumo-history.md](../cumo-history.md))。**batch > 1 の実使用が 1 つも無いので、この API が本来の使い方で速いのかも分かっていない。**
 
 **「Cumo が decode で PyTorch に勝つ」は batch 1 の話である。** 投入が支配する帯から外れたときに向きが保たれるかは、測っていない。
 
