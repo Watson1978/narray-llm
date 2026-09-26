@@ -126,7 +126,7 @@ module NArrayLLM
           scores += mask unless mask.nil?
           Ops.softmax_rows(scores).dot(values[head, true, true])
         end
-        Ops.contiguous(XF.hstack(parts)).dot(w[:"#{prefix}o_t"])
+        XF.hstack(parts).dot(w[:"#{prefix}o_t"])
       end
 
       # [tokens, inner] to [heads, tokens, d_kv], contiguous. reshape! rather

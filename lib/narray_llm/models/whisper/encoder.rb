@@ -65,7 +65,7 @@ module NArrayLLM
           scores = q[head, true, true].dot(k[head, true, true].transpose)
           Ops.softmax_rows(scores).dot(v[head, true, true])
         end
-        linear(Ops.contiguous(XF.hstack(parts)), w[:out])
+        linear(XF.hstack(parts), w[:out])
       end
 
       def heads_major(x)
