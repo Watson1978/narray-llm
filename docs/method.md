@@ -108,67 +108,51 @@ nvidia-smi --query-gpu=clocks.sm,clocks.mem --format=csv,noheader   # アイド�
 
 終わったら `sudo nvidia-smi -rgc` と `sudo nvidia-smi -rmc` で戻す。計測の前には、GPU を使うプロセスが無いこと (`nvidia-smi --query-compute-apps=pid,name --format=csv`) と、load average が低いことも確かめる。CPU が埋まっていてもカーネルの投入が遅れて wall に出る。
 
-### 3 実装の表 (GPT-2、Llama 2、Mamba、Switch、Whisper)
+### 3 実装の表 (GPT-2、Llama 2、int8、Mamba、Switch、Whisper、ResNet の `shift` と `unfold`)
 
 ```
 bench/run.sh bench/three_impl.tsv tmp/bench
 python3 bench/aggregate.py bench/three_impl.tsv tmp/bench
 ```
 
-`bench/three_impl.tsv` の 1 行が 1 条件で、Cumo、CuPy、PyTorch のコマンドを並べてある。`bench/run.sh` はそれに対照 (Cumo をもう一度) を足した 4 系列を 1 ラウンドにまとめ、系列の順序をラウンドごとに回転させて直列に走らせる。ラウンドは 11 (`ROUNDS=10` で 0〜10) で、`bench/aggregate.py` が先頭の 1 本を位置で捨てて 10 ラウンドで集計する。どれか 1 本でも失敗するか数字が取れなければ、バッチごと止まる。
+`bench/three_impl.tsv` の 1 行が 1 条件で、Cumo、CuPy、PyTorch のコマンドを並べてある (20 条件)。`bench/run.sh` はそれに対照 (Cumo をもう一度) を足した 4 系列を 1 ラウンドにまとめ、系列の順序をラウンドごとに回転させて直列に走らせる。ラウンドは 11 (`ROUNDS=10` で 0〜10) で、`bench/aggregate.py` が先頭の 1 本を位置で捨てて 10 ラウンドで集計する。どれか 1 本でも失敗するか数字が取れなければ、バッチごと止まる。条件は 1 つずつ順に回すので、条件どうしの比 (ResNet の `unfold` / `shift` など) は中央値の比になる。
 
-条件ごとの `--rounds` は、1 プロセスが 2 秒以上続けて回るように選んである。計測区間が短いとメモリクロックの段が上がる前に終わり、走行ごとに 9001 と 14001 のどちらかに落ちる (AGENTS.md)。Python 側は計測の前に生成したトークン列を fixture と照合し、ずれていれば数字を出さずに失敗する。
+条件ごとの `--rounds` と `--inner` は、1 プロセスが 2 秒以上続けて回るように選んである。計測区間が短いとメモリクロックの段が上がる前に終わり、走行ごとに 9001 と 14001 のどちらかに落ちる (AGENTS.md)。Python 側は計測の前に生成したトークン列を fixture と照合し、ずれていれば数字を出さずに失敗する。
 
-条件は 18 本のバッチで測り、幅が 8% を超えた条件だけ `--rounds` を上げて測り直した。`bench/three_impl.tsv` はその最終的なコマンドである (経緯は [cumo-history.md](cumo-history.md) の「3 実装の表を 0.10.0 で測り直した」)。
+**Llama 2 のキャッシュ有りの 2 条件は、メモリクロックの段で回を選んだ。** このバッチの中では、一部の回が計測区間のあいだ 9001 MHz に張り付き、値が約 597 と約 745 の 2 群に分かれる (0.10.0 のときと同じ現象、[cumo-history.md](cumo-history.md))。中央値が群の間に落ちるので、4 系列とも `CLOCKS=1` で best-of-N に採った回の計測区間の時刻を出し、並走させた `nvidia-smi --query-gpu=timestamp,clocks.mem --format=csv,noheader -lms 10` (長さ 200 は `-lms 50`) と突き合わせる。区間の中のサンプルの 8 割以上が 14001 の回だけを使い、比は同じラウンドの両方の系列がそうだった回で取る。長さ 64 は区間が約 0.09 秒なので、サンプラの間隔を 10 ms にして 1/5 の目安 (作法 15) を満たした。両方とも 20 ラウンドで、使えた組は長さ 200 で 9〜11 組、長さ 64 で 4〜5 組だった。長さ 200 では約 597 の回がすべて 9001 で、段と群がきれいに対応した。長さ 64 では 9001 のままでも約 745 に入る回があり、2 群を分けているのは段だけではない。
 
-### int8 の表
+### ResNet-18 の cuDNN の表
 
-3 実装の表と同じ 4 系列の手順で、モデルだけを `stories110M_q80` にした。2 条件をインターリーブして 10 ラウンド。結果と経緯は [results/llama2-int8.md](results/llama2-int8.md) の「3 実装を並べる」。
-
-```
-GPU=1 ruby script/llama2_generate.rb stories110M_q80 --length 64
-GPU=1 python/.venv/bin/python python/bench_llama2.py --model stories110M_q80 --length 64 --cache 1
-GPU=1 python/.venv/bin/python python/bench_llama2.py --impl torch --model stories110M_q80 --length 64 --cache 1
-```
-
-### ResNet-18 の表
-
-1 つ目の表 (`shift` と `unfold`) は、Cumo の 2 綴り、CuPy の 2 綴り、対照 (Cumo `unfold`) の 5 条件をインターリーブして 11 ラウンド回し、先頭を捨てて 10 ラウンド。`--inner` は 1 条件が約 2 秒になる回数にする。
+6 条件 (Cumo `unfold`、Cumo `cudnn`、Cumo `cudnn` の TF32、PyTorch の fp32、PyTorch の TF32、対照) をインターリーブし、13 ラウンドの先頭を捨てて 12 ラウンド。cumo 0.11.0 では cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。PyTorch の TF32 は `--no-tf32` で切る。`--inner` は 1 条件が約 2 秒になる回数にする。
 
 ```
 GPU=1 ruby script/resnet_classify.rb --spelling unfold --inner 120 --no-check
-GPU=1 python/.venv/bin/python python/bench_resnet.py --spelling unfold --inner 120
-```
-
-2 つ目の表 (cuDNN) は 6 条件、13 ラウンドの先頭を捨てて 12 ラウンドで、上限の既定が 8 MiB で畳み込みが TF32 に載りうる版の cumo (0.9.0 以前) で測った。ワークスペースの上限は `CUMO_CUDNN_MAX_WORKSPACE_SIZE` (バイト数)、PyTorch の TF32 は `--no-tf32` で切る。`--inner` はこちらも 1 条件が約 2 秒になる回数にする。cumo 0.10.0 以降は上限の既定が 128 MiB で、TF32 は `CUMO_ALLOW_TF32=1` のときだけ使う。
-
-```
 GPU=1 ruby script/resnet_classify.rb --spelling cudnn --inner 250 --no-check
-GPU=1 CUMO_CUDNN_MAX_WORKSPACE_SIZE=1073741824 ruby script/resnet_classify.rb --spelling cudnn --inner 250 --no-check
-GPU=1 python/.venv/bin/python python/bench_resnet.py --impl torch --inner 250
+GPU=1 CUMO_ALLOW_TF32=1 ruby script/resnet_classify.rb --spelling cudnn --inner 250 --no-check
 GPU=1 python/.venv/bin/python python/bench_resnet.py --impl torch --inner 250 --no-tf32
+GPU=1 python/.venv/bin/python python/bench_resnet.py --impl torch --inner 250
 ```
 
-結果と経緯は [results/resnet-18.md](results/resnet-18.md) の「3 実装を並べる」と「cuDNN のワークスペースが 8 MiB に制限されていた」。
+cumo 0.9.0 以前 (上限の既定が 8 MiB で、畳み込みが黙って TF32 に載る) で上限を振った経緯は、[results/resnet-18.md](results/resnet-18.md) の「cuDNN のワークスペースが 8 MiB に制限されていた」にある。
 
 ### サンプリングの表
 
-GPT-2 の長さ 900 で、貪欲法、`--top-k 50`、`--top-p 0.9`、両方、両方 (ソートを共有しない旧版)、対照 (貪欲法) の 6 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。計測用の生成は EOT で止まらない。README の表に載せたのは旧版を除く 5 条件である。
+GPT-2 の長さ 900 で、貪欲法、`--top-k 50`、`--top-p 0.9`、両方、対照 (貪欲法) の 5 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。サンプリングする条件は `--seed 42` で揃える。計測用の生成は EOT で止まらない。
 
 ```
 GPU=1 ruby script/gpt2_generate.rb --length 900
-GPU=1 ruby script/gpt2_generate.rb --length 900 --top-k 50 --top-p 0.9
+GPU=1 ruby script/gpt2_generate.rb --length 900 --top-k 50 --top-p 0.9 --seed 42
 ```
 
 結果と経緯は [results/gpt2-124m.md](results/gpt2-124m.md) の「サンプリング」。
 
 ### 学習の表
 
-1 ステップの区間ごとに、Cumo と PyTorch の 3 区間 (forward、backward、update) と対照の 7 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。1 回は 40 ステップで、先頭の 1 ステップを除いた平均を取る。README の表は、その s/step の逆数である。
+Cumo と PyTorch のそれぞれを forward、backward、update で止めた 6 条件と、対照 (Cumo を update まで) の 7 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。1 回は 40 ステップで、先頭の 1 ステップを除いた平均を取る。区間の時間は同じラウンドの中で差を取って出す (backward = backward で止めた時間 − forward で止めた時間)。README の表は、その s/step の逆数である。
 
 ```
-GPU=1 ruby script/gpt2_train.rb --steps 40 --stop-after backward
-GPU=1 python/.venv/bin/python python/bench_gpt2_train.py --impl torch --steps 40 --stop-after backward
+GPU=1 ruby script/gpt2_train.rb --steps 40 --no-check --stop-after backward
+GPU=1 python/.venv/bin/python python/bench_gpt2_train.py --impl torch --steps 40 --no-check --stop-after backward
 ```
 
 勾配と損失の一致 (関門 B と C) は `rake test` が確かめる。結果と経緯は [results/gpt2-124m.md](results/gpt2-124m.md) の「学習」。

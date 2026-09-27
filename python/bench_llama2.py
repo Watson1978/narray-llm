@@ -15,6 +15,7 @@ fixture before anything is timed, so a run that drifted cannot report a number.
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib
 import json
 import os
@@ -74,21 +75,30 @@ def main() -> int:
         generator.generate([BOS], 2, cache=cache)
         impl.synchronize()
         times = []
+        windows = []
         for _ in range(args.repeat):
+            opened = stamp()
             started = time.perf_counter()
             generator.generate([BOS], args.length, cache=cache)
             impl.synchronize()
             times.append(time.perf_counter() - started)
+            windows.append((opened, stamp()))
 
     best = min(times)
     # Divided by what was actually produced, not what was asked for: the loop
     # stops early if the model emits the delimiter (stories110M does, at 243).
     generated = len(tokens) - 1
     backend = describe(args.impl, impl)
+    if os.environ.get("CLOCKS", "").lower() in ("1", "on", "true"):
+        print("window: %s -> %s" % windows[times.index(best)])
     print(f"{args.impl}\t{backend}\t{args.model}\tlen={generated}\tcache={int(cache)}\t"
           f"{generated / best:.2f}\t{best:.4f}\t"
           f"{','.join(f'{t:.4f}' for t in times)}")
     return 0
+
+
+def stamp() -> str:
+    return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S.%f")[:-3]
 
 
 def describe(name, impl) -> str:
