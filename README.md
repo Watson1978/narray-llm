@@ -23,9 +23,11 @@ The project exists to exercise Numo and Cumo on real workloads. Several performa
 
 要約すると、1 トークンずつ生成する decode では Cumo が CuPy の 3.4〜3.6 倍、PyTorch の 1.06〜1.39 倍速い。行列積が支配する条件 (KV キャッシュ無しの生成、encode) では PyTorch の 0.95〜1.05 倍で、ほぼ並ぶ。int8 では PyTorch の 2.8〜2.9 倍。ResNet-18 と学習は PyTorch が速く、学習は 0.64 倍。
 
-同じ重み・同じ手順で Python の 3 実装と並べたもの。5 実装すべてが同一のトークン列を出すことを関門にしてある。
+下の表は、同じ重みと同じ手順で Python の 3 実装と並べたものである。5 実装すべてが同一のトークン列を出すことを関門にしてある。
 
-tokens/sec、プロセスごとに best-of-3 の中央値、11 ラウンドの先頭を位置で捨てて 10。Cumo / CuPy / PyTorch / 対照 (Cumo をもう一度) の 4 系列を 1 ラウンド内でインターリーブし、系列の順序をラウンドごとに回転させて直列に走らせた。クロックは `nvidia-smi -lgc 3090` / `-lmc 14001` で固定してある。GPU は RTX 5070 Ti Laptop。この表は 2026-09-27 に cumo 0.11.0 で測り直したもので、20 条件すべてで対照が 1 をまたいでいる。1 プロセスが 2 秒以上続けて回るように、条件ごとに回数を選んである (`bench/three_impl.tsv`)。
+値は、プロセスごとの best-of-3 を 10 ラウンドぶん取った中央値である。11 ラウンド回し、最初の 1 ラウンドは値を見ずに捨てた。1 ラウンドの中では Cumo / CuPy / PyTorch / 対照 (Cumo をもう一度) の 4 系列を直列に走らせ、系列の順序をラウンドごとに回転させた。1 プロセスが 2 秒以上続けて回るように、条件ごとに回数を選んである (`bench/three_impl.tsv`)。
+
+GPU は RTX 5070 Ti Laptop で、クロックは `nvidia-smi -lgc 3090` / `-lmc 14001` で固定した。表はすべて 2026-09-27 に cumo 0.11.0 で測り直した。このバッチの 20 条件では、対照 (Cumo どうしの比) がすべて 1 をまたいだ。
 
 比は同じラウンドどうしの比の中央値で、分子はすべて Cumo。1 を超えれば Cumo が速い。後ろの n/10 は、10 ラウンドのうち比が 1 を超えた (Cumo が速かった) 回数。
 
@@ -60,7 +62,7 @@ tokens/sec (1 秒あたりに生成したトークン数)。大きいほど速�
 | 無し | 64 | 482.0 | 205.3 | 459.5 | 2.342 10/10 | 1.051 10/10 |
 | 無し | 200 | 262.0 | 173.4 | 270.2 | 1.521 10/10 | 0.980 2/10 またぐ |
 
-キャッシュ有りの 2 行は、計測区間のメモリクロックが 14001 MHz だった回だけで出した (20 ラウンド)。同じバッチの中で一部の回が約 597 に落ちて値が 2 群に分かれ、中央値が群の間に来てしまうためである。比の後ろは、同じラウンドの両方の系列が 14001 だった組の数。長さ 64 では 9001 のままでも高い群に入る回があり、2 群を分けているのは段だけではない (未分離)。経過と内訳は [llama2-110m.md](docs/results/llama2-110m.md)。
+キャッシュ有りの 2 行は、計測区間のメモリクロックが 14001 MHz だった回だけで出した (20 ラウンド)。同じバッチの中で一部の回が約 597 tokens/sec に落ちて値が 2 群に分かれ、中央値が群の間に来てしまうためである。比の後ろは、同じラウンドの両方の系列が 14001 だった組の数。長さ 64 では 9001 のままでも高い群に入る回があったので、2 群を分けているのはメモリクロックの段だけではない。ほかに何が効いているかは、まだ切り分けていない。経過と内訳は [llama2-110m.md](docs/results/llama2-110m.md)。
 
 ### Llama 2 110M を int8 (Q8_0) で
 
@@ -119,7 +121,7 @@ decode は 1 秒あたりに生成したトークン数、encode は 1 秒あた
 | 綴りの効き (`unfold` / `shift`、中央値の比) | 1.59 倍 | 2.31 倍 | | |
 | 対照 (Cumo `unfold` をもう一度) | 1085.9 | | またぐ | |
 
-cuDNN の腕は別のバッチ (6 条件、13 ラウンドの先頭を捨てて 12) なので、上の表とまたいで比を取らないこと。CuPy 14.2 は cuDNN の畳み込みを公開していないので、この表の相手は PyTorch。単位は同じく枚/sec。cumo 0.11.0 では cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。
+cuDNN を使う条件は別のバッチで測った (6 条件、13 ラウンドの先頭を捨てて 12)。上の表とまたいで比を取らないこと。CuPy 14.2 は cuDNN の畳み込みを公開していないので、この表の相手は PyTorch。単位は同じく枚/sec。cumo 0.11.0 では cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。
 
 | 条件 | 枚/sec | カーネル/pass | |
 |---|---|---|---|
@@ -157,7 +159,9 @@ GPT-2 124M の decode。上の 3 行は 1 トークンあたりに GPU に投入
 | Numo (CPU) | 1.244e-02 | 1.48e-03 |
 | Cumo (GPU) | 6.801e-04 | 1.38e-04 |
 
-Cumo と PyTorch を同じバッチでインターリーブした区間別 (11 ラウンドの先頭を位置で捨てて 10 ラウンド、対照つき)。1 秒あたりにその区間を通せる回数で、合計の行が steps/sec。大きいほど速い。本/step は 1 ステップで GPU に投入するカーネルの本数。測った s/step の逆数で、比も時間の比の逆数から出している。区間の時間は、`--stop-after` で forward、backward、update のそれぞれで止めた 3 本の差である。
+下の表は、Cumo と PyTorch を同じバッチでインターリーブし、区間ごとに測ったものである (11 ラウンドの先頭を捨てて 10 ラウンド、対照つき)。値は 1 秒あたりにその区間を通せる回数で、合計の行が steps/sec になる。大きいほど速い。本/step は 1 ステップで GPU に投入するカーネルの本数。
+
+測ったのは s/step で、表の値はその逆数、比も時間の比の逆数から出した。区間ごとの時間は、`--stop-after` で forward、backward、update のそれぞれで止めた 3 本の差から求めた。
 
 | 区間 | 本/step | Cumo | PyTorch | Cumo / PyTorch |
 |---|---|---|---|---|
@@ -182,7 +186,7 @@ decode で 1 トークンあたりに GPU に投入するカーネルの本数 (
 
 計測の作法そのものは [AGENTS.md](AGENTS.md) に、その則がどの測定から来たかは [docs/measurement-cases.md](docs/measurement-cases.md) にある。
 
-条件・手順・外れ値の扱い・そこに至る過程はすべて [docs/results/](docs/results/) にある。[gpt2-124m.md](docs/results/gpt2-124m.md)、[llama2-110m.md](docs/results/llama2-110m.md)、[mamba-130m.md](docs/results/mamba-130m.md)、[switch-base-8.md](docs/results/switch-base-8.md)、[whisper-tiny.md](docs/results/whisper-tiny.md)、[llama2-int8.md](docs/results/llama2-int8.md)、[resnet-18.md](docs/results/resnet-18.md) がモデルごとの記録で、採用しなかった変更とその理由も同じ場所に残してある。
+条件、手順、外れ値の扱い、そこに至る過程は、モデルごとに [docs/results/](docs/results/) にまとめてある (各表の下にリンクがある)。採用しなかった変更とその理由も同じ場所に残した。
 
 ## 計測環境
 
@@ -210,7 +214,7 @@ GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.
 
 ## 現在の状態
 
-進め方は [PLAN-gpt2.md](docs/plans/PLAN-gpt2.md)、[PLAN-llama2.md](docs/plans/PLAN-llama2.md)、[PLAN-mamba.md](docs/plans/PLAN-mamba.md)、[PLAN-switch.md](docs/plans/PLAN-switch.md)、[PLAN-whisper.md](docs/plans/PLAN-whisper.md)、[PLAN-batch.md](docs/plans/PLAN-batch.md)、[PLAN-sampling.md](docs/plans/PLAN-sampling.md)、[PLAN-training.md](docs/plans/PLAN-training.md)、[PLAN-conv2d.md](docs/plans/PLAN-conv2d.md) に従い、前の段階の受け入れテストが通るまで次の段階のコードは書かない。
+前の段階の受け入れテストが通るまで、次の段階のコードは書かない。段階の切り方は [PLAN-gpt2.md](docs/plans/PLAN-gpt2.md)、[PLAN-llama2.md](docs/plans/PLAN-llama2.md)、[PLAN-mamba.md](docs/plans/PLAN-mamba.md)、[PLAN-switch.md](docs/plans/PLAN-switch.md)、[PLAN-whisper.md](docs/plans/PLAN-whisper.md)、[PLAN-batch.md](docs/plans/PLAN-batch.md)、[PLAN-sampling.md](docs/plans/PLAN-sampling.md)、[PLAN-training.md](docs/plans/PLAN-training.md)、[PLAN-conv2d.md](docs/plans/PLAN-conv2d.md) にある。
 
 | モデル | 段階 | 状態 |
 |---|---|---|
@@ -223,7 +227,7 @@ GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.
 | GPT-2 124M (学習) | 勾配リーダ / op ごとの backward / モデル全体の backward / AdamW / 計測 | 完了 (Numo と Cumo が llm.c の関門 B・C を通る。完全一致ではなく llm.c の許容誤差) |
 | ResNet-18 (2 次元の畳み込み) | 重みと参照 / Conv2d / pooling とブロック / モデル全体 / 計測 | 完了 (16 枚のクラス番号が transformers と完全一致。生成しないモデルなので関門が違う) |
 
-次に何を作るかの候補は [docs/idea.md](docs/idea.md) にある。モデルとは限らない — バッチ生成のように、既にあるモデルへ足すほうが安く広く踏めることもある。
+次に何を作るかの候補は [docs/idea.md](docs/idea.md) にある。作るものはモデルとは限らない。バッチ生成のように、既にあるモデルへ機能を足すほうが、安く広く使い込めることもある。
 
 ## 実行手順
 
@@ -250,7 +254,7 @@ GPU=1 ruby script/gpt2_train.rb                    # GPT-2 を AdamW で 10 ス�
 
 cumo は Gemfile の任意のグループ `gpu` に入れてあり、素の `bundle install` では入らない。`CUMO_NVCC_GENERATE_CODE` は初回起動の JIT を避けるためのもので、sm_120 以外の GPU では値を読み替える。
 
-`rake prepare` は Python と C コンパイラを使う。Mamba と Switch は配布された重みを変換し、Llama 2 と Mamba の参照値は C の参照実装から、Switch・Whisper・ResNet-18 の参照値は transformers から取る。Python は `python/.venv` を見る (`PYTHON=...` で差し替えられる) ので、先に `python/requirements.txt` を入れておく (torch だけは CUDA の版に合わせて別に入れる。手順はファイルの中にある)。揃ったものは作り直さないので何度叩いてもよく、`rake prepare:switch` のようにモデルごとにも呼べる。data/ は全部で約 7 GB になる。
+`rake prepare` は Python と C コンパイラを使う。Mamba と Switch は配布された重みを変換する。参照値は、Llama 2 と Mamba が C の参照実装から、Switch・Whisper・ResNet-18 が transformers から取る。Python は `python/.venv` を見る (`PYTHON=...` で差し替えられる) ので、先に `python/requirements.txt` を入れておく (torch だけは CUDA の版に合わせて別に入れる。手順はファイルの中にある)。揃ったものは作り直さないので何度叩いてもよく、`rake prepare:switch` のようにモデルごとにも呼べる。data/ は全部で約 7 GB になる。
 
 BPE エンコーダは実装していないので、プロンプトはトークン id で渡す (`--tokens 15496,11,995`)。温度・top-k・top-p も入っている (`--top-k 50 --top-p 0.9 --seed 42`)。乱数はホストの `Random` から引くので、両バックエンドが同じ列を出す。
 
@@ -291,17 +295,17 @@ data/                    取得した重み (.bin と safetensors) の置き場 
 
 ## 謝辞
 
-C の単一ファイル参照に依っている。GPT-2 と学習は Andrej Karpathy の [llm.c](https://github.com/karpathy/llm.c)、Llama 2 と int8 は同じく [llama2.c](https://github.com/karpathy/llama2.c) (どちらも MIT)、Mamba は kroggen の [mamba.c](https://github.com/kroggen/mamba.c) (README に MIT と記載)。重み・参照値・ファイル形式をそのまま使い、関門もそれらの出力に置いている。
+このプロジェクトは C の単一ファイルの参照実装に依っている。GPT-2 と学習は Andrej Karpathy の [llm.c](https://github.com/karpathy/llm.c) に、Llama 2 と int8 は同じく [llama2.c](https://github.com/karpathy/llama2.c) に拠った (どちらも MIT)。Mamba は kroggen の [mamba.c](https://github.com/kroggen/mamba.c) に拠った (README に MIT と記載がある)。重み・参照値・ファイル形式をそのまま使い、関門もそれらの出力に置いている。
 
-C 参照が無いモデルは transformers を参照にした。Switch base-8、Whisper tiny、ResNet-18 の 3 つで、中間活性は再実装ではなく実モデルへの forward hook で取っているので、参照が自前の思い込みからずれない。
+C の参照が無い Switch base-8、Whisper tiny、ResNet-18 の 3 つは、transformers を参照にした。中間活性は自分で書き直した実装からではなく、実モデルに forward hook を掛けて取っている。参照に自分の思い込みが入り込まないようにするためである。
 
-重みは Hugging Face の配布をそのまま読む — [google/switch-base-8](https://huggingface.co/google/switch-base-8)、[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)、[state-spaces/mamba-130m](https://huggingface.co/state-spaces/mamba-130m)、[microsoft/resnet-18](https://huggingface.co/microsoft/resnet-18) (いずれも Apache-2.0)。
+重みは Hugging Face の配布をそのまま読む。[google/switch-base-8](https://huggingface.co/google/switch-base-8)、[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)、[state-spaces/mamba-130m](https://huggingface.co/state-spaces/mamba-130m)、[microsoft/resnet-18](https://huggingface.co/microsoft/resnet-18) の 4 つで、いずれも Apache-2.0 である。
 
 ResNet-18 の関門に使う画像は [imagenet-sample-images](https://github.com/EliSchwartz/imagenet-sample-images) から取る。参照を作るときに取得するだけで、このリポジトリには含めていない。
 
 速度の比較対象は CuPy と PyTorch。同じ形の移植を `python/` に置いてあり、どちらも「勝つため」ではなく、出た差が cumo に固有かどうかを分けるために並べている。
 
-そして [Numo::NArray](https://github.com/ruby-numo/numo-narray) と [Cumo](https://github.com/sonots/cumo) — このプロジェクトはそれらを実使用で踏むために書いている。
+最後に [Numo::NArray](https://github.com/ruby-numo/numo-narray) と [Cumo](https://github.com/sonots/cumo) に感謝する。このプロジェクトは、この 2 つを実際のワークロードで使い込むために書いている。
 
 ## ライセンス
 
