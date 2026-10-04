@@ -119,11 +119,11 @@ python3 bench/aggregate.py bench/three_impl.tsv tmp/bench
 
 条件ごとの `--rounds` と `--inner` は、1 プロセスが 2 秒以上続けて回るように選んである。計測区間が短いとメモリクロックの段が上がる前に終わり、走行ごとに 9001 と 14001 のどちらかに落ちる (AGENTS.md)。Python 側は計測の前に生成したトークン列を fixture と照合し、ずれていれば数字を出さずに失敗する。
 
-**Llama 2 のキャッシュ有りの 2 条件は、メモリクロックの段で回を選んだ。** このバッチの中では、一部の回が計測区間のあいだ 9001 MHz に張り付き、値が約 597 と約 745 の 2 群に分かれる (0.10.0 のときと同じ現象、[cumo-history.md](cumo-history.md))。中央値が群の間に落ちるので、4 系列とも `CLOCKS=1` で best-of-N に採った回の計測区間の時刻を出し、並走させた `nvidia-smi --query-gpu=timestamp,clocks.mem --format=csv,noheader -lms 10` (長さ 200 は `-lms 50`) と突き合わせる。区間の中のサンプルの 8 割以上が 14001 の回だけを使い、比は同じラウンドの両方の系列がそうだった回で取る。長さ 64 は区間が約 0.09 秒なので、サンプラの間隔を 10 ms にして 1/5 の目安 (作法 15) を満たした。両方とも 20 ラウンドで、使えた組は長さ 200 で 9〜11 組、長さ 64 で 4〜5 組だった。長さ 200 では約 597 の回がすべて 9001 で、段と群がきれいに対応した。長さ 64 では 9001 のままでも約 745 に入る回があり、2 群を分けているのは段だけではない。
+**Llama 2 のキャッシュ有りの 2 条件は、メモリクロックの段で回を選んだ。** このバッチの中では、一部の回が計測区間のあいだ 9001 MHz に張り付き、値が約 597 と約 745 の 2 群に分かれる (0.10.0 のときと同じ現象、[cumo-history.md](cumo-history.md))。中央値が群の間に落ちるので、4 系列とも `CLOCKS=1` で best-of-N に採った回の計測区間の時刻を出し、並走させた `nvidia-smi --query-gpu=timestamp,clocks.mem --format=csv,noheader -lms 10` (長さ 200 は `-lms 50`) と突き合わせる。区間の中のサンプルの 8 割以上が 14001 の回だけを使い、比は同じラウンドの両方の系列がそうだった回で取る。長さ 64 は区間が約 0.09 秒なので、サンプラの間隔を 10 ms にして 1/5 の目安 (作法 15) を満たした。両方とも 20 ラウンドで、使えた組は長さ 200 で 9〜11 組、長さ 64 で 4〜5 組だった。長さ 200 では約 597 の回がすべて 9001 で、段と群がきれいに対応した。長さ 64 では 9001 のままでも約 745 に入る回があり、2 群を分けているのは段だけではない。0.12.0 で測ったとき (2026-10-04) は低い群が出ず、14001 に届かなかった回もほかの回と同じ群に入った。使えた組は長さ 64 で 14〜16 組、長さ 200 で 18 組だった。
 
 ### ResNet-18 の cuDNN の表
 
-6 条件 (Cumo `unfold`、Cumo `cudnn`、Cumo `cudnn` の TF32、PyTorch の fp32、PyTorch の TF32、対照) をインターリーブし、13 ラウンドの先頭を捨てて 12 ラウンド。cumo 0.11.0 では cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。PyTorch の TF32 は `--no-tf32` で切る。`--inner` は 1 条件が約 2 秒になる回数にする。
+6 条件 (Cumo `unfold`、Cumo `cudnn`、Cumo `cudnn` の TF32、PyTorch の fp32、PyTorch の TF32、対照) をインターリーブし、13 ラウンドの先頭を捨てて 12 ラウンド。cumo 0.10.0 以降は cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。PyTorch の TF32 は `--no-tf32` で切る。`--inner` は 1 条件が約 2 秒になる回数にする。
 
 ```
 GPU=1 ruby script/resnet_classify.rb --spelling unfold --inner 120 --no-check
@@ -170,7 +170,7 @@ nsys stats --force-export=true --report cuda_gpu_kern_sum --format csv dec72.nsy
 nsys stats --force-export=true --report cuda_api_sum      --format csv dec72.nsys-rep
 ```
 
-カーネルごとに `(dec72 の Instances - dec40 の Instances) / 32` が 1 トークンあたりの本数。オプションは `--sample=none` (`--sampling=none` は存在しない)、`--force-export=true` を付けないと古い .sqlite が黙って使われる。CSV の列は 0 始まりで 2=Instances、3=Avg、4=Med、6=Max、8=Name。**時間は Avg × 本数を原則とし、Max / Med が 100 を超える行だけ Med × 本数に置き換える** (理由は上記)。
+カーネルごとに `(dec72 の Instances - dec40 の Instances) / 32` が 1 トークンあたりの本数。Switch は EOS で生成を止めるので、`--no-eos` を付けないと 2 本が同じ長さで終わって差が 0 になる。オプションは `--sample=none` (`--sampling=none` は存在しない)、`--force-export=true` を付けないと古い .sqlite が黙って使われる。CSV の列は 0 始まりで 2=Instances、3=Avg、4=Med、6=Max、8=Name。**時間は Avg × 本数を原則とし、Max / Med が 100 を超える行だけ Med × 本数に置き換える** (理由は上記)。
 
 1 演算あたりの固定費は `bench_gpt2_sweep.py` が毎回出力する。Ruby 側は次で測る。
 
