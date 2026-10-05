@@ -2,9 +2,9 @@
 
 第 0 段階の [checkpoint-format-gpt2.md](checkpoint-format-gpt2.md) と同じ流儀で、推測せず llm.c のソースを読んで確定させたもの。出典は `karpathy/llm.c` の master (2026-08-21 取得) で、行番号は取得時点のもの。
 
-- `llmc/tokenizer.h` — 読み出し側。`tokenizer_init` (:41)、`tokenizer_decode` (:86)、`safe_printf` (:19)
-- `train_gpt2.py` — 書き出し側。`write_tokenizer` (:509)
-- `train_gpt2.c` — 利用側。EOT からの生成開始 (:1127-1129)、デコードと表示 (:1151-1152)
+- `llmc/tokenizer.h`、読み出し側。`tokenizer_init` (:41)、`tokenizer_decode` (:86)、`safe_printf` (:19)
+- `train_gpt2.py`、書き出し側。`write_tokenizer` (:509)
+- `train_gpt2.c`、利用側。EOT からの生成開始 (:1127-1129)、デコードと表示 (:1151-1152)
 
 すべて little-endian。
 
@@ -24,7 +24,7 @@
 | 3 | `eot_token` | 50256 (version 2 のみ) | `tokenizer.h:65` |
 | 4..255 | 未使用 (0 埋め) | — | `train_gpt2.py:511` が `torch.zeros(256)` で作る |
 
-`vocab_size` は書き出し側で `enc.max_token_value + 1` (`train_gpt2.py:510`)。つまり **padding 無しの V = 50257** で、checkpoint の `wte` が持つ Vp = 50304 とは別物。
+`vocab_size` は書き出し側で `enc.max_token_value + 1` (`train_gpt2.py:510`)。つまり padding 無しの V = 50257 で、checkpoint の `wte` が持つ Vp = 50304 とは違う値である。
 
 ## 本体 (`tokenizer.h:70-80`)
 
@@ -57,13 +57,13 @@ llm.c は無条件生成の開始トークンとして EOT を使う (`train_gpt
 
 `tokenizer_decode` (`tokenizer.h:86-95`) は id を範囲検査して表を引くだけ。`token_id < vocab_size` でなければ「invalid token id」と表示して NULL を返す。
 
-GPT-2 はバイトレベル BPE なので、**トークン境界は UTF-8 の文字境界と一致しない**。1 文字が複数トークンに割れることがあり、途中まで連結した時点では不正な UTF-8 になる。したがって:
+GPT-2 はバイトレベル BPE なので、**トークン境界は UTF-8 の文字境界と一致しない**。1 文字が複数トークンに割れることがあり、途中まで連結した時点では不正な UTF-8 になる。したがって、次の順に処理する。
 
 1. トークンのバイト列をすべて連結してから
 2. `force_encoding('UTF-8')` し
 3. 不正シーケンスは `scrub` で U+FFFD に置換する
 
-llm.c の `safe_printf` (`tokenizer.h:19-38`) は、1 バイトトークンのうち印字可能でも空白でもないものを **表示しない** という別の対処をしている。これは端末に制御コードを吐かないための表示側の都合であって形式の一部ではないので、このリポジトリでは真似せず、バイトは保持したうえで UTF-8 として不正な部分だけ置換する方針を採る。
+llm.c の `safe_printf` (`tokenizer.h:19-38`) は、1 バイトトークンのうち印字可能でも空白でもないものを表示しない、という別の対処をしている。これは端末に制御コードを出力しないための表示側の都合であって、形式の一部ではない。そのため、このリポジトリでは真似せず、バイトは保持したうえで UTF-8 として不正な部分だけ置換する方針を採る。
 
 ## エンコード (BPE) は実装しない
 

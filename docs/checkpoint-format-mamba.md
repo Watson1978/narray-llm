@@ -4,7 +4,7 @@
 
 ## 作り方
 
-配布されている `.bin` は無い。**HuggingFace の PyTorch 重みを `export.py` が変換する。**
+配布されている `.bin` は無い。HuggingFace の PyTorch 重みを `export.py` が変換する。
 
 ```
 ruby script/download_mamba.rb
@@ -12,9 +12,9 @@ cd vendor/mamba.c && ../../python/.venv/bin/python export.py \
   ../../data/mamba-130m ../../data/mamba-130m.bin
 ```
 
-`export.py` は `state-spaces/mamba-...` という名前を渡すと `transformers` のキャッシュに落とすが、**このリポジトリは `config.json` と `pytorch_model.bin` を `data/mamba-130m/` に直接取ってディレクトリを渡す**。`load_model` が `os.path.isdir` を見るのでそのまま通り、重みが他の `.bin` と同じ場所に残る。
+`export.py` は `state-spaces/mamba-...` という名前を渡すと `transformers` のキャッシュにダウンロードするが、このリポジトリは `config.json` と `pytorch_model.bin` を `data/mamba-130m/` に直接取得して、そのディレクトリを渡す。`load_model` が `os.path.isdir` を見るのでそのまま通り、重みが他の `.bin` と同じ場所に残る。
 
-**参照実装は `make` で建てる。`make fast` を使わないこと。**`fast` は `-Ofast` (= `-ffast-math`) で、ビット一致の参照にならない。
+参照実装は `make` でビルドする。**`make fast` を使わないこと**。`fast` は `-Ofast` (= `-ffast-math`) で、ビット一致の参照にならない。
 
 ## ヘッダ
 
@@ -27,21 +27,21 @@ cd vendor/mamba.c && ../../python/.venv/bin/python export.py \
 
 整数 8 個の順序は `n_layers`, `vocab_size`, `d_model`, `d_inner`, `dt_rank`, `d_state`, `d_conv`, `shared_classifier`。
 
-**`mamba.c` は `fread(config, sizeof(Config), 1, file)` で 9 個ぶん読む** (`mamba.c:185`)。9 個目の `rounded_vocab_size` はファイルには無く 0 埋めから読まれ、直後に計算で上書きされる。
+`mamba.c` は `fread(config, sizeof(Config), 1, file)` で 9 個ぶん読む (`mamba.c:185`)。9 個目の `rounded_vocab_size` はファイルには無く 0 埋めから読まれ、直後に計算で上書きされる。
 
 ## `rounded_vocab_size`
 
-**`vocab_size` が 8 の倍数でなければ 8 の倍数に切り上げ、埋め込みと分類器はその大きさで格納される** (`mamba.c:187`)。
+`vocab_size` が 8 の倍数でなければ 8 の倍数に切り上げ、埋め込みと分類器はその大きさで格納される (`mamba.c:187`)。
 
 ```
 vocab_size % 8 != 0 なら rounded = vocab_size + (8 - vocab_size % 8)
 ```
 
-mamba-130m は `vocab_size` が **50277** で、格納は **50280** 行。トークナイザの表は 50277 個なので、**末尾 3 行はどのトークンにも対応しない**。
+mamba-130m は `vocab_size` が 50277 で、格納は 50280 行。トークナイザの表は 50277 個なので、**末尾 3 行はどのトークンにも対応しない**。
 
 ## テンソルの並び
 
-`memory_map_weights` (`mamba.c:152`) がポインタを進める順そのまま。**テンソル名ごとに全層をまとめて書く** (llama2.c と同じ)。dtype はすべて fp32。
+並びは、`memory_map_weights` (`mamba.c:152`) がポインタを進める順そのままである。テンソル名ごとに全層をまとめて書く (llama2.c と同じ)。dtype はすべて fp32。
 
 | | 形 |
 |---|---|
@@ -59,9 +59,9 @@ mamba-130m は `vocab_size` が **50277** で、格納は **50280** 行。トー
 | `final_norm` | `[d_model]` |
 | `lm_head` | `[rounded_vocab, d_model]` — `shared_classifier` が 0 のときだけ |
 
-**`A` は `A_log` ではない。**`export.py` が `A = -exp(A_log)` に変換して書くので、読む側は変換しない。**全要素が負** である。
+**`A` は `A_log` ではない**。`export.py` が `A = -exp(A_log)` に変換して書くので、読む側は変換しない。全要素が負である。
 
-**`conv1d_weight` は torch では `[d_inner, 1, d_conv]`** だが、真ん中の軸が 1 なので要素数は `d_inner * d_conv`。`mamba.c` も `d_inner * 1 * d_conv` として扱う。
+`conv1d_weight` は torch では `[d_inner, 1, d_conv]` だが、真ん中の軸が 1 なので要素数は `d_inner * d_conv`。`mamba.c` も `d_inner * 1 * d_conv` として扱う。
 
 ## mamba-130m の値
 
@@ -76,16 +76,16 @@ mamba-130m は `vocab_size` が **50277** で、格納は **50280** 行。トー
 | `d_conv` | 4 |
 | `shared_classifier` | 1 |
 
-ファイルは **516,541,696 バイト** で、`256 + 4 x パラメタ数` と一致する。
+ファイルは 516,541,696 バイトで、`256 + 4 x パラメタ数` と一致する。
 
-**並びは元の PyTorch と突き合わせて検証した。**`embedding`、`in_proj[0]`、`conv1d_weight[0]`、`x_proj[23]`、`A[0]`、`A[23]`、`out_proj[23]`、`final_norm` の 8 つが **すべてビット一致** する。最終層が合うので層ごとのストライドも正しい。
+並びは、元の PyTorch の重みと比べて検証した。`embedding`、`in_proj[0]`、`conv1d_weight[0]`、`x_proj[23]`、`A[0]`、`A[23]`、`out_proj[23]`、`final_norm` の 8 つが、すべてビット一致する。最終層が合うので、層ごとのストライドも正しい。
 
 ## 小さいチェックポイント
 
-**公式の最小が 130m しかない。** stories260K に当たるものが無いので、`script/mamba_tiny.rb` が同じ形式で小さいものを書く。固定 seed なので **同じコマンドが同じバイトを出す**。
+公式に配られているモデルは 130m が最小である。stories260K に当たるものが無いので、`script/mamba_tiny.rb` が同じ形式で小さいチェックポイントを書く。固定 seed なので、同じコマンドからは同じバイト列が出る。
 
 ```
 ruby script/mamba_tiny.rb          # data/mamba_tiny.bin、69,760 バイト
 ```
 
-既定は `n_layers=2, vocab=64, d_model=32, d_inner=64, dt_rank=2, d_state=4, d_conv=4`。`A` は負で書く。**`mamba.c` がこのファイルの config を正しく読むことは確認済み。**
+既定は `n_layers=2, vocab=64, d_model=32, d_inner=64, dt_rank=2, d_state=4, d_conv=4`。`A` は負で書く。`mamba.c` がこのファイルの config を正しく読むことは確認済み。

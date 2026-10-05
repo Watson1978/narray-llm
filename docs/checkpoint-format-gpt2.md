@@ -2,11 +2,11 @@
 
 このドキュメントは推測ではなく llm.c のソースを読んで確定させたもの。出典は `karpathy/llm.c` の master (2026-08-21 取得) の以下のファイル。行番号は取得時点のもの。
 
-- `train_gpt2.c` — `gpt2_build_from_checkpoint` (:707), `ParameterTensors` (:537), `fill_in_parameter_sizes` (:556), `malloc_and_point_parameters` (:580)
-- `test_gpt2.c` — debug state の読み出し (:53-:81)
-- `train_gpt2.py` — 書き出し側。`write_tensors` (:395), `pad_vocab` (:429), `write_model` (:449), `write_state` (:479), `write_tokenizer` (:509)
-- `llmc/tokenizer.h` — `tokenizer_init` (:40)
-- `dev/download_starter_pack.sh` — 取得元 URL
+- `train_gpt2.c`、`gpt2_build_from_checkpoint` (:707), `ParameterTensors` (:537), `fill_in_parameter_sizes` (:556), `malloc_and_point_parameters` (:580)
+- `test_gpt2.c`、debug state の読み出し (:53-:81)
+- `train_gpt2.py`、書き出し側。`write_tensors` (:395), `pad_vocab` (:429), `write_model` (:449), `write_state` (:479), `write_tokenizer` (:509)
+- `llmc/tokenizer.h`、`tokenizer_init` (:40)
+- `dev/download_starter_pack.sh`、取得元 URL
 
 すべて little-endian、C の `int` は int32、浮動小数点は fp32。
 
@@ -44,7 +44,7 @@ version 3 以外は llm.c が拒否する (`train_gpt2.c:714`)。bf16 版は ver
 
 ヘッダ直後から fp32 が隙間なく並ぶ (`train_gpt2.c:749` が `num_parameters` 個を一度に読む)。並び順は `malloc_and_point_parameters` (`train_gpt2.c:588-592`) のポインタ配列の順で、書き出し側 `train_gpt2.py:395-425` の `write_tensors` と一致する。
 
-要素数は `fill_in_parameter_sizes` (`train_gpt2.c:556-577`) がすべて。
+要素数は、すべて `fill_in_parameter_sizes` (`train_gpt2.c:556-577`) で決まる。
 
 | # | 名前 | shape | 要素数の式 | 124M での要素数 |
 |---|---|---|---|---|
@@ -65,26 +65,26 @@ version 3 以外は llm.c が拒否する (`train_gpt2.c:714`)。bf16 版は ver
 | 14 | `lnfw` | `[C]` | `C` | 768 |
 | 15 | `lnfb` | `[C]` | `C` | 768 |
 
-合計 `num_parameters` = **124,475,904**。ファイルサイズ = `1024 + 4 * 124,475,904` = **497,904,640** バイト。
+合計 `num_parameters` = 124,475,904。ファイルサイズ = `1024 + 4 * 124,475,904` = 497,904,640 バイト。
 
 ### 落とし穴 3 つ
 
-**(a) `wte` は V ではなく Vp 行。** `ParameterTensors` のコメント (`train_gpt2.c:538`) は `// (V, C)` と書いてあるが、実際に確保・読み込みされるのは `fill_in_parameter_sizes` の `param_sizes[0] = Vp * C` (`train_gpt2.c:561`) で **Vp 行**。コメントの方が古い。ここを V で読むと以降の全テンソルのオフセットがずれる。
+**(a) `wte` は V ではなく Vp 行**。`ParameterTensors` のコメント (`train_gpt2.c:538`) には `// (V, C)` と書いてあるが、実際に確保・読み込みされるのは `fill_in_parameter_sizes` の `param_sizes[0] = Vp * C` (`train_gpt2.c:561`) で、Vp 行である。コメントの方が古い。ここを V で読むと、以降の全テンソルのオフセットがずれる。
 
-**(b) 埋めた行 (V..Vp-1) は厳密に 0.0。** `train_gpt2.py:429` の `pad_vocab(tensor, multiple=128, value=0)` が `F.pad(..., value=value)` で 0 埋めする。つまり `wte[50257..50303, :]` は全部 0.0。オフセットが正しいことの強い検査になる。logits を取るときはこの行を捨てる必要がある (`test_gpt2.c:120` の `for (int v = 0; v < V; v++) // note we only loop to V (ignoring padding)`)。
+**(b) 埋めた行 (V..Vp-1) は厳密に 0.0**。`train_gpt2.py:429` の `pad_vocab(tensor, multiple=128, value=0)` が `F.pad(..., value=value)` で 0 埋めする。つまり `wte[50257..50303, :]` は全部 0.0 で、オフセットが正しいことの強い検査になる。logits を取るときは、この行を捨てる必要がある (`test_gpt2.c:120` の `for (int v = 0; v < V; v++) // note we only loop to V (ignoring padding)`)。
 
-**(c) 重み行列は PyTorch の `nn.Linear` 配置、つまり `[out, in]`。** HuggingFace の GPT-2 は `Conv1D` で `[in, out]` を持つが、`train_gpt2.py:223-232` が
+**(c) 重み行列は PyTorch の `nn.Linear` 配置、つまり `[out, in]`**。HuggingFace の GPT-2 は `Conv1D` で `[in, out]` を持つが、`train_gpt2.py:223-232` が
 
 ```python
 transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
 ... sd[k].copy_(sd_hf[k].t())
 ```
 
-で転置してから書き出している。したがってファイル上の `qkvw[l]` は `[3C, C]` = `[out, in]`。フォワードでは `y = x . W^T + b` になる (第一段階で効いてくる)。
+で転置してから書き出している。したがってファイル上の `qkvw[l]` は `[3C, C]` = `[out, in]`。フォワードでは `y = x . W^T + b` になる (第一段階で関係してくる)。
 
 ## 2. gpt2_124M_debug_state.bin (参照入力・参照出力)
 
-`test_gpt2.c:53-82` がすべて。
+この形式の読み出しは、すべて `test_gpt2.c:53-82` にある。
 
 ### ヘッダ: int32 x 256 (1024 バイト)
 
@@ -106,15 +106,15 @@ transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'ml
 | 3 | `expected_loss` | fp32 | 1 | 4 |
 | 4 | `expected_grads` | fp32 | `num_parameters` | 497,903,616 |
 
-合計ファイルサイズ = **549,369,860** バイト。
+合計ファイルサイズ = 549,369,860 バイト。
 
-**`expected_logits` は Vp ではなく V (50257) 幅。** `test_gpt2.c:74` が `B*T*V` で確保し、`:125` が `expected_logits[bt*V + v]` で読む一方、C 側の計算結果は `calculated_logits[bt*Vp + v]` (`:121`) で引く。参照 logits は padding 無しなので、比較するときは自分の logits 側を V 列に切り詰める。
+**`expected_logits` は Vp ではなく V (50257) 幅**。`test_gpt2.c:74` が `B*T*V` で確保し、`:125` が `expected_logits[bt*V + v]` で読む一方、C 側の計算結果は `calculated_logits[bt*Vp + v]` (`:121`) で引く。参照 logits は padding 無しなので、比較するときは自分の logits 側を V 列に切り詰める。
 
 **`expected_grads` の並びは重みと同一** (`test_gpt2.c:69` が `malloc_and_point_parameters(&expected_grads, model.param_sizes)` を同じ `param_sizes` で呼ぶ)。`wte` の勾配も `pad_vocab(..., value=0)` されている (`train_gpt2.py:491`)。第 0〜3 段階は推論のみなので読み飛ばすが、オフセット計算には必要。
 
 ### 外部から検証できる値
 
-`test_gpt2.c:89-90` の `expected_losses[0] = 5.270007133483887f` は、この `x`/`y` に対する PyTorch の loss。`test_gpt2.c:141` が `expected_loss` (ファイル内の値) を `model.mean_loss` と `1e-2` で突き合わせているので、ファイル内の `expected_loss` はこの値と `1e-2` 以内で一致する。debug state のオフセットが正しいかの外部アンカーとして使える。
+`test_gpt2.c:89-90` の `expected_losses[0] = 5.270007133483887f` は、この `x`/`y` に対する PyTorch の loss。`test_gpt2.c:141` が `expected_loss` (ファイル内の値) を `model.mean_loss` と `1e-2` の許容差で比べているので、ファイル内の `expected_loss` はこの値と `1e-2` 以内で一致する。この値は、debug state のオフセットが正しいかを外から確かめる基準として使える。
 
 ## 3. gpt2_tokenizer.bin (デコード用テーブル)
 
@@ -131,7 +131,7 @@ transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'ml
 
 ### 本体 (`tokenizer.h:70-80`)
 
-`vocab_size` 個ぶん、次を繰り返す:
+`vocab_size` 個ぶん、次を繰り返す。
 
 - `uint8 length` (1 バイト、必ず 1 以上)
 - `length` バイトの生バイト列 (UTF-8 とは限らないので String は ASCII-8BIT で保持する)
@@ -140,7 +140,7 @@ transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'ml
 
 このリポジトリのテストが使う「先頭数要素の参照値」は、llm.c の出力ではなく HuggingFace の `openai-community/gpt2` の `model.safetensors` (dtype F32) から safetensors ヘッダのオフセットを使って直接読んだもの。`train_gpt2.py:216` の `GPT2LMHeadModel.from_pretrained(model_type)` が読むのと同じ重みなので、fp32 でビット一致するはず、という前提で完全一致を要求している。
 
-対応関係 (`train_gpt2.py:399-425` の名前対応):
+対応関係は次のとおり (`train_gpt2.py:399-425` の名前対応)。
 
 | このリポジトリ | HuggingFace safetensors | 備考 |
 |---|---|---|
