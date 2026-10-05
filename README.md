@@ -29,7 +29,7 @@ The project exists to exercise Numo and Cumo on real workloads. Several performa
 
 GPU は RTX 5070 Ti Laptop で、クロックは `nvidia-smi -lgc 3090` / `-lmc 14001` で固定した。表はすべて 2026-10-04 に cumo 0.12.0 で測り直した。このバッチの 20 条件では、対照 (Cumo どうしの比) がすべて 1 をまたいだ。
 
-比は同じラウンドどうしの比の中央値で、分子はすべて Cumo。1 を超えれば Cumo が速い。後ろの n/10 は、10 ラウンドのうち比が 1 を超えた (Cumo が速かった) 回数。
+比は同じラウンドどうしの比の中央値で、分子はすべて Cumo。1 を超えれば Cumo が速い。後ろの n/10 は、10 ラウンドのうち比が 1 を超えた回数。
 
 ### GPT-2 124M
 
@@ -132,7 +132,7 @@ cuDNN を使う条件は別のバッチで測った (6 条件、13 ラウンド�
 | PyTorch (TF32、既定) | 2803.2 | | Cumo `cudnn` (TF32) の 1.36 倍 |
 | 対照 (Cumo `cudnn` 既定) | 1912.3 | | またぐ |
 
-TF32 ありのカーネル数が整数にならないのは、cuDNN のアルゴリズムの探索がプロセスごとに違う組を選ぶためである。
+TF32 ありのカーネル数はプロセスによって 216 か 217 になり、1 つの値に決まらない。cuDNN のアルゴリズムの探索が、プロセスごとに違う組を選ぶためである。
 
 経過と内訳は [resnet-18.md](docs/results/resnet-18.md)。
 
@@ -210,7 +210,7 @@ decode で 1 トークンあたりに GPU に投入するカーネルの本数 (
 | Python | 3.14.7、NumPy 2.5.3、CuPy 14.2.0、PyTorch 2.13.0+cu130 (同梱の cuDNN 9.20) |
 | プロファイラ | Nsight Systems 2026.3.2 |
 
-GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.md](docs/machine.md) にある。同じ表でも段が違えば 1.4 倍動くので、別の機械の数字と並べるときはそちらを先に読むこと。
+GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.md](docs/machine.md) にある。メモリクロックの段が違えば同じ条件でも値が 1.4 倍動くので、別の機械の数字と並べるときはそちらを先に読むこと。
 
 ## 現在の状態
 
@@ -227,7 +227,7 @@ GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.
 | GPT-2 124M (学習) | 勾配リーダ / op ごとの backward / モデル全体の backward / AdamW / 計測 | 完了 (Numo と Cumo が llm.c の関門 B・C を通る。完全一致ではなく llm.c の許容誤差) |
 | ResNet-18 (2 次元の畳み込み) | 重みと参照 / Conv2d / pooling とブロック / モデル全体 / 計測 | 完了 (16 枚のクラス番号が transformers と完全一致。生成しないモデルなので関門が違う) |
 
-次に何を作るかの候補は [docs/idea.md](docs/idea.md) にある。作るものはモデルとは限らない。バッチ生成のように、既にあるモデルへ機能を足すほうが、安く広く使い込めることもある。
+次に何を作るかの候補は [docs/idea.md](docs/idea.md) にある。作るものはモデルとは限らない。バッチ生成のように、既にあるモデルへ機能を足すほうが、少ない手間で Numo と Cumo をより幅広く使えることもある。
 
 ## 実行手順
 
@@ -254,7 +254,7 @@ GPU=1 ruby script/gpt2_train.rb                    # GPT-2 を AdamW で 10 ス�
 
 cumo は Gemfile の任意のグループ `gpu` に入れてあり、素の `bundle install` では入らない。`CUMO_NVCC_GENERATE_CODE` は初回起動の JIT を避けるためのもので、sm_120 以外の GPU では値を読み替える。
 
-`rake prepare` は Python と C コンパイラを使う。Mamba と Switch は配布された重みを変換する。参照値は、Llama 2 と Mamba が C の参照実装から、Switch・Whisper・ResNet-18 が transformers から取る。Python は `python/.venv` を見る (`PYTHON=...` で差し替えられる) ので、先に `python/requirements.txt` を入れておく (torch だけは CUDA の版に合わせて別に入れる。手順はファイルの中にある)。揃ったものは作り直さないので何度叩いてもよく、`rake prepare:switch` のようにモデルごとにも呼べる。data/ は全部で約 7 GB になる。
+`rake prepare` は Python と C コンパイラを使う。Mamba と Switch は配布された重みを変換する。参照値は、Llama 2 と Mamba が C の参照実装から、Switch・Whisper・ResNet-18 が transformers から取る。Python は `python/.venv` を見る (`PYTHON=...` で差し替えられる) ので、先に `python/requirements.txt` を入れておく (torch だけは CUDA の版に合わせて別に入れる。手順はファイルの中にある)。揃ったものは作り直さないので何度実行してもよく、`rake prepare:switch` のようにモデルごとにも呼べる。data/ は全部で約 7 GB になる。
 
 BPE エンコーダは実装していないので、プロンプトはトークン id で渡す (`--tokens 15496,11,995`)。温度・top-k・top-p も入っている (`--top-k 50 --top-p 0.9 --seed 42`)。乱数はホストの `Random` から引くので、両バックエンドが同じ列を出す。
 
@@ -291,7 +291,7 @@ data/                    取得した重み (.bin と safetensors) の置き場 
 
 コードは `Numo::` / `Cumo::` を直接書かず `XM` 定数を経由し、フォワードパスのテンソルは `XF` 定数で作る。トークン id のように「デバイスに置くと同期を招く」配列は `HM` (常に Numo) 側に固定している。
 
-図の元データは [docs/architecture.archify.json](docs/architecture.archify.json) で、[archify](https://github.com/tt-a1i/archify) が JSON を検証してから PNG に落としている。
+図の元データは [docs/architecture.archify.json](docs/architecture.archify.json) で、[archify](https://github.com/tt-a1i/archify) が JSON を検証してから PNG に書き出している。
 
 ## 謝辞
 
