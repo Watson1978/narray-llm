@@ -20,9 +20,7 @@ module NArrayLLM
       FLOOR = 1.0e-10
       DYNAMIC_RANGE = 8.0
       # The whole front end runs in fp32 whatever XF is, and the result is cast
-      # on the way out. The phase table needs the index product n_fft * bins =
-      # 79800, which is Infinity in fp16, and bf16 rounds it far enough to flip
-      # the sign of the cosine (max|d| 2.0). FLOOR underflows to 0 in fp16.
+      # on the way out. FLOOR underflows to 0 in fp16.
       PRECISION = XM::SFloat
 
       attr_reader :n_fft, :hop_length, :n_samples, :frames, :bins, :mel_bins
@@ -118,10 +116,12 @@ module NArrayLLM
         # window_function(n_fft, "hann") builds with periodic true.
         n = PRECISION.new(1, @n_fft).seq
         @window = 0.5 - (0.5 * PRECISION::Math.cos(n * (2.0 * Math::PI / @n_fft)))
-        # The one sided DFT as two real tables.
-        rows = PRECISION.new(@n_fft, 1).seq
-        cols = PRECISION.new(1, @bins).seq
-        angle = rows * cols * (-2.0 * Math::PI / @n_fft)
+        # The one sided DFT as two real tables. The index product is folded
+        # mod n_fft in integers first: unfolded, the angle reaches 1253 rad,
+        # where fp32 rounds it by about 1e-4 rad.
+        rows = XM::Int32.new(@n_fft, 1).seq
+        cols = XM::Int32.new(1, @bins).seq
+        angle = PRECISION.cast((rows * cols) % @n_fft) * (-2.0 * Math::PI / @n_fft)
         @cos = Ops.contiguous(PRECISION::Math.cos(angle), PRECISION)
         @sin = Ops.contiguous(PRECISION::Math.sin(angle), PRECISION)
       end

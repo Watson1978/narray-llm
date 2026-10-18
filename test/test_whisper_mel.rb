@@ -15,8 +15,9 @@ class TestWhisperMel < Test::Unit::TestCase
 
   # The DFT is two fp32 matmuls over 400 terms where the reference runs
   # numpy's FFT in float64, and log10 magnifies whatever is left in the bins
-  # that nearly cancel. The worst seen is 1.6e-03, all of it where the
-  # reference is within 0.05 of its own floor; above 0.5 it is 1.5e-05.
+  # that nearly cancel. The worst seen is 8.4e-05, all of it where the
+  # reference is within 0.05 of its own floor; above 0.5 it is 3e-06. Both
+  # thresholds were set when the worst was 1.6e-03 and are not tightened.
   TOLERANCE = 2.5e-3
   LOUD_TOLERANCE = 5.0e-5
 
@@ -44,10 +45,10 @@ class TestWhisperMel < Test::Unit::TestCase
     notify(format('最大 max|d| = %.3e (閾値 %.1e)', worst, TOLERANCE))
   end
 
-  # Where the signal has energy the two agree to 1.5e-05. The 1.6e-03 lives in
-  # the bins that nearly cancel, which is what an fp32 DFT cannot hold and
-  # log10 then magnifies. Repeating the pipeline in float64 brings the worst
-  # case to 4.8e-05, which is how that was established rather than assumed.
+  # Where the signal has energy the two agree to 3e-06. The worst case used to
+  # be 1.6e-03, and most of it was the phase table rounding angles of up to
+  # 1253 rad in fp32. Folding the index mod n_fft alone brings it to 8.4e-05,
+  # the same order as repeating the whole pipeline in float64 (4.8e-05).
   def test_the_error_is_in_the_quiet_bins
     want = @dump['input_features']
     difference = (want - @mel.call(waveform)).abs
