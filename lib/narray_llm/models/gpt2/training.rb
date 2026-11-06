@@ -33,11 +33,12 @@ module NArrayLLM
 
       # Answers a Hash keyed like Checkpoint::TENSOR_NAMES, each in the layout
       # the checkpoint uses so it can be compared with llm.c's expected_grads.
-      def backward(acts)
+      def backward(acts, loss_scale: 1.0)
         grads = zero_grads
         rows = acts[:batch_size] * acts[:seq_len]
 
-        dlogits = Backward.crossentropy_softmax(acts[:probs], acts[:targets])
+        dlogits = Backward.crossentropy_softmax(acts[:probs], acts[:targets],
+                                                dloss: loss_scale / rows)
         dlnf, dwte_t, = Backward.matmul(dlogits, acts[:lnf], @wte_t, bias: false)
         grads[:wte] = Ops.contiguous(dwte_t.transpose)
         dx, grads[:lnfw], grads[:lnfb] = Backward.layernorm(dlnf, acts[:final], @lnfw)
@@ -60,7 +61,7 @@ module NArrayLLM
       # turned into the orientation the parameter is stored in. The weights are
       # kept transposed here and llm.c keeps them the other way round, so four
       # matrices a layer are transposed back on the way in.
-      def each_parameter(grads)
+      def each_parameter(grads, into: XF)
         yield [:wte], grads[:wte], @wte
         yield [:wpe], grads[:wpe], @wpe
         @layers.each_with_index do |weights, layer|
@@ -69,12 +70,22 @@ module NArrayLLM
           end
           { qkvw: :qkvw_t, attprojw: :attprojw_t, fcw: :fcw_t, fcprojw: :fcprojw_t }
             .each do |name, stored|
-            yield [name, layer], Ops.contiguous(grads[name][layer, true, true].transpose),
+            yield [name, layer], Ops.contiguous(grads[name][layer, true, true].transpose, into),
                   weights[stored]
           end
         end
         yield [:lnfw], grads[:lnfw], @lnfw
         yield [:lnfb], grads[:lnfb], @lnfb
+      end
+
+      def master_weights(checkpoint)
+        source = Checkpoint::TENSOR_NAMES.to_h { |name| [name, checkpoint[name]] }
+        source[:wte] = source[:wte][0...@config.vocab_size, true]
+        masters = {}
+        each_parameter(source, into: XM::SFloat) do |key, tensor, _param|
+          masters[key] = Ops.contiguous(tensor, XM::SFloat)
+        end
+        masters
       end
 
       # The token table is held in both orientations and only one of them is a
@@ -144,7 +155,9 @@ module NArrayLLM
 
       def mean_loss(probs, targets)
         hot = Backward.one_hot(probs.class, targets, @config.vocab_size)
-        NArrayLLM.scalar(-XM::NMath.log((probs * hot).sum(axis: 1)).mean).to_f
+        picked = (probs * hot).sum(axis: 1)
+        picked = Ops.contiguous(picked, XM::SFloat) if NArrayLLM.half_width?(picked.class)
+        NArrayLLM.scalar(-XM::NMath.log(picked).mean).to_f
       end
 
       def zero_grads

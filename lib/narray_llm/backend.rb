@@ -60,6 +60,10 @@ module NArrayLLM
     XF != XM::SFloat
   end
 
+  def half_width?(klass)
+    klass::ELEMENT_BYTE_SIZE == 2
+  end
+
   def dtype_name
     return 'fp16' if fp16?
     return 'bf16' if bf16?

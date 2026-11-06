@@ -84,14 +84,14 @@ class TestTraining < Test::Unit::TestCase
   # that covers all three at once.
   def test_ten_steps_follow_llm_c_loss_for_loss
     model = NArrayLLM::GPT2::Model.new(checkpoint)
-    optimiser = NArrayLLM::AdamW.new(model)
+    optimiser = NArrayLLM::AdamW.new(model, checkpoint: checkpoint)
     worst = 0.0
 
     EXPECTED_LOSSES.each_with_index do |want, step|
       loss, acts = model.forward_train(state.inputs, state.targets)
       assert_in_delta(want, loss, LOSS_TOLERANCE, "step #{step}")
       worst = [worst, (loss - want).abs].max
-      optimiser.step(model.backward(acts))
+      optimiser.step(model.backward(acts, loss_scale: optimiser.loss_scale))
     end
 
     assert_equal(EXPECTED_LOSSES.size, optimiser.steps)

@@ -37,6 +37,11 @@ module NArrayLLM
     # llm.c caches mean and rstd from the forward pass; they are recomputed here
     # instead, which costs two reductions and keeps the forward unchanged.
     def layernorm(dout, inp, weight, eps: Ops::LAYERNORM_EPS)
+      if NArrayLLM.half_width?(inp.class)
+        wide = [dout, inp, weight].map { |a| Ops.contiguous(a, XM::SFloat) }
+        return layernorm(*wide, eps: eps).map { |a| Ops.contiguous(a, inp.class) }
+      end
+
       mean = inp.mean(axis: 1, keepdims: true)
       centered = inp - mean
       variance = (centered * centered).mean(axis: 1, keepdims: true)
@@ -111,6 +116,10 @@ module NArrayLLM
     # 1.0 where the id matches the column, built with arithmetic rather than a
     # comparison so no Bit array is formed (AGENTS.md).
     def one_hot(klass, ids, num_classes)
+      if NArrayLLM.half_width?(klass)
+        return Ops.contiguous(one_hot(XM::SFloat, ids, num_classes), klass)
+      end
+
       rows = Array(ids).flatten
       column = klass.new(1, num_classes).seq
       identifiers = klass.cast(rows).reshape(rows.size, 1)

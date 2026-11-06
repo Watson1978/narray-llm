@@ -49,7 +49,7 @@ checkpoint = NArrayLLM::GPT2::Checkpoint.load(File.join(DATA_DIR, 'gpt2_124M.bin
 state = NArrayLLM::GPT2::DebugState.load(File.join(DATA_DIR, 'gpt2_124M_debug_state.bin'),
                                          config: checkpoint.config)
 model = NArrayLLM::GPT2::Model.new(checkpoint)
-optimiser = NArrayLLM::AdamW.new(model)
+optimiser = NArrayLLM::AdamW.new(model, checkpoint: checkpoint)
 config = checkpoint.config
 
 puts "backend: #{NArrayLLM.gpu? ? 'Cumo (GPU)' : 'Numo (CPU)'}, #{NArrayLLM.dtype_name}"
@@ -58,6 +58,7 @@ puts "model:   L=#{config.num_layers} NH=#{config.num_heads} C=#{config.channels
 puts "batch:   B=#{state.batch_size} T=#{state.seq_len}"
 puts "steps:   #{options[:steps]} (AdamW lr #{NArrayLLM::AdamW::DEFAULTS[:learning_rate]})"
 puts "止める:  #{options[:stop_after]}" unless options[:stop_after] == :update
+puts "損失の倍率: #{optimiser.loss_scale}" unless optimiser.loss_scale == 1.0
 puts
 
 times = []
@@ -65,7 +66,7 @@ options[:steps].times do |step|
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   loss, acts = model.forward_train(state.inputs, state.targets)
   unless options[:stop_after] == :forward
-    grads = model.backward(acts)
+    grads = model.backward(acts, loss_scale: optimiser.loss_scale)
     optimiser.step(grads) unless options[:stop_after] == :backward
   end
   NArrayLLM::Profiler::NULL.synchronize
@@ -94,3 +95,4 @@ else
   puts format('各回: %s', timed.map { |t| format('%.3f', t) }.join(', '))
 end
 puts format('AdamW の状態: %.1f MiB', optimiser.bytes / 1048576.0)
+puts "あふれて飛ばしたステップ: #{optimiser.skipped}" if optimiser.skipped.positive?

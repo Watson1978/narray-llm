@@ -15,19 +15,19 @@ narray-llm implements six models in Ruby: GPT-2 124M, Llama 2 110M (also with in
 
 Each model must match its reference implementation exactly. For the language models, that means the same token sequence as llm.c, llama2.c, mamba.c or transformers. Training uses the tolerances of llm.c itself.
 
-The tables below compare Cumo with CuPy and PyTorch ports of the same models. They were measured with cumo 0.14.0 on an RTX 5070 Ti Laptop GPU with locked clocks. In one-token decode, Cumo is 3.3 to 3.7 times as fast as CuPy and 1.06 to 1.34 times as fast as PyTorch. Where matrix multiplication dominates (generation without a KV cache, encoders), Cumo runs at 0.95 to 1.03 times the speed of PyTorch. With int8 weights, it is 2.75 to 2.81 times as fast as PyTorch. PyTorch is faster on ResNet-18 and on training, where Cumo reaches 0.63 times its speed.
+The tables below compare Cumo with CuPy and PyTorch ports of the same models. They were measured with cumo 0.15.0 on an RTX 5070 Ti Laptop GPU with locked clocks. In one-token decode, Cumo is 3.2 to 3.6 times as fast as CuPy and 1.05 to 1.34 times as fast as PyTorch. Where matrix multiplication dominates (generation without a KV cache, encoders), Cumo runs at 0.95 to 1.01 times the speed of PyTorch. With int8 weights, it is 2.82 to 2.84 times as fast as PyTorch. PyTorch is faster on ResNet-18. In training, Cumo reaches 0.98 times the speed of PyTorch with its default AdamW, and 0.73 times with `fused=True`.
 
 The project exists to exercise Numo and Cumo on real workloads. Several performance problems found here have been fixed in Cumo itself. The measurement notes under docs/results/ are in Japanese.
 
 ## 数字
 
-要約すると、1 トークンずつ生成する decode では Cumo が CuPy の 3.3〜3.7 倍、PyTorch の 1.06〜1.34 倍速い。行列積が支配する条件 (KV キャッシュ無しの生成、encode) では PyTorch の 0.95〜1.03 倍で、ほぼ並ぶ。int8 では PyTorch の 2.75〜2.81 倍。ResNet-18 と学習は PyTorch が速く、学習は 0.63 倍。
+要約すると、1 トークンずつ生成する decode では Cumo が CuPy の 3.2〜3.6 倍、PyTorch の 1.05〜1.34 倍速い。行列積が支配する条件 (KV キャッシュ無しの生成、encode) では PyTorch の 0.95〜1.01 倍で、ほぼ並ぶ。int8 では PyTorch の 2.82〜2.84 倍。ResNet-18 は PyTorch が速い。学習は PyTorch の既定の AdamW の 0.98 倍、`fused=True` の 0.73 倍。
 
 下の表は、同じ重みと同じ手順で Python の 3 実装と並べたものである。5 実装すべてが同一のトークン列を出すことを関門にしてある。
 
 値は、プロセスごとの best-of-3 を 10 ラウンドぶん取った中央値である。11 ラウンド回し、最初の 1 ラウンドは値を見ずに捨てた。1 ラウンドの中では Cumo / CuPy / PyTorch / 対照 (Cumo をもう一度) の 4 系列を直列に走らせ、系列の順序をラウンドごとに回転させた。1 プロセスが 2 秒以上続けて回るように、条件ごとに回数を選んである (`bench/three_impl.tsv`)。
 
-GPU は RTX 5070 Ti Laptop で、クロックは `nvidia-smi -lgc 3090` / `-lmc 14001` で固定した。表はすべて 2026-10-19 に cumo 0.14.0 で測り直した。このバッチの 20 条件では、対照 (Cumo どうしの比) がすべて 1 をまたいだ。
+GPU は RTX 5070 Ti Laptop で、クロックは `nvidia-smi -lgc 3090` / `-lmc 14001` で固定した。表はすべて 2026-11-07 に cumo 0.15.0 で測り直した。このバッチの 20 条件のうち 19 条件では、対照 (Cumo どうしの比) が 1 をまたいだ。残る GPT-2 のキャッシュ有り 64 では、同じコードの対照が 10 ラウンドとも Cumo より速く出た (1.009、1.002〜1.028)。この条件の比は 1% ほど動きうるものとして読むこと。
 
 比は同じラウンドどうしの比の中央値で、分子はすべて Cumo。1 を超えれば Cumo が速い。後ろの n/10 は、10 ラウンドのうち比が 1 を超えた回数。
 
@@ -37,17 +37,17 @@ tokens/sec (1 秒あたりに生成したトークン数)。大きいほど速�
 
 | KV キャッシュ | 生成長 | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|---|
-| 有り | 64 | 836.6 | 227.7 | 790.9 | 3.671 10/10 | 1.057 10/10 |
-| 有り | 256 | 812.4 | 227.1 | 713.2 | 3.551 10/10 | 1.139 10/10 |
-| 無し | 64 | 488.6 | 207.9 | 498.4 | 2.353 10/10 | 0.981 1/10 またぐ |
-| 無し | 256 | 226.7 | 141.2 | 239.4 | 1.605 10/10 | 0.946 0/10 |
+| 有り | 64 | 824.0 | 228.4 | 787.0 | 3.595 10/10 | 1.051 10/10 |
+| 有り | 256 | 811.2 | 227.9 | 711.0 | 3.548 10/10 | 1.141 10/10 |
+| 無し | 64 | 482.5 | 208.3 | 493.8 | 2.307 10/10 | 0.971 1/10 またぐ |
+| 無し | 256 | 227.4 | 141.9 | 240.6 | 1.602 10/10 | 0.945 0/10 |
 
 バッチ生成 (KV キャッシュ有り、長さ 256)。tokens/sec は全系列の合計で、大きいほど速い。
 
 | batch | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|
-| 1 | 806.7 | 222.6 | 710.7 | 3.598 10/10 | 1.133 10/10 |
-| 8 | 3815.5 | 1684.6 | 3587.1 | 2.250 10/10 | 1.058 10/10 |
+| 1 | 808.1 | 225.8 | 712.1 | 3.567 10/10 | 1.140 10/10 |
+| 8 | 3840.2 | 1704.1 | 3610.4 | 2.252 10/10 | 1.054 10/10 |
 
 経過と内訳は [gpt2-124m.md](docs/results/gpt2-124m.md)。
 
@@ -57,12 +57,12 @@ tokens/sec (1 秒あたりに生成したトークン数)。大きいほど速�
 
 | KV キャッシュ | 生成長 | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|---|
-| 有り | 64 | 715.2 | 216.0 | 557.8 | 3.314 17/17 | 1.279 16/16 |
-| 有り | 200 | 704.1 | 215.2 | 554.4 | 3.288 17/17 | 1.269 17/17 |
-| 無し | 64 | 465.9 | 198.1 | 453.1 | 2.329 10/10 | 1.027 10/10 |
-| 無し | 200 | 261.5 | 171.0 | 262.1 | 1.531 10/10 | 0.994 5/10 またぐ |
+| 有り | 64 | 706.7 | 219.3 | 558.8 | 3.224 16/16 | 1.265 14/14 |
+| 有り | 200 | 702.3 | 219.9 | 557.4 | 3.205 14/14 | 1.259 13/13 |
+| 無し | 64 | 463.1 | 203.2 | 456.1 | 2.279 10/10 | 1.014 9/10 またぐ |
+| 無し | 200 | 262.7 | 172.7 | 265.8 | 1.520 10/10 | 0.984 4/10 またぐ |
 
-キャッシュ有りの 2 行は、計測区間のメモリクロックが 14001 MHz だった回だけで出した (20 ラウンド)。回を選ぶのは、cumo 0.11.0 で測ったときに、同じバッチの中で一部の回が約 597 tokens/sec に落ちて値が 2 群に分かれ、中央値が群の間に来てしまったからである。0.14.0 の計測では、長さ 64 の 3 回 (Cumo 2 回、対照 1 回) が約 575 の低い群に落ちた。3 回とも 14001 に届いていなかったので、除いてある。比の後ろは、同じラウンドの両方の系列が 14001 だった組の数。経過と内訳は [llama2-110m.md](docs/results/llama2-110m.md)。
+キャッシュ有りの 2 行は、計測区間のメモリクロックが 14001 MHz だった回だけで出した (20 ラウンド)。回を選ぶのは、cumo 0.11.0 で測ったときに、同じバッチの中で一部の回が約 597 tokens/sec に落ちて値が 2 群に分かれ、中央値が群の間に来てしまったからである。0.15.0 の計測では、低い群に落ちた回は無かった。14001 に届かなかった回は、値が高い群にあっても除いてある。比の後ろは、同じラウンドの両方の系列が 14001 だった組の数。経過と内訳は [llama2-110m.md](docs/results/llama2-110m.md)。
 
 ### Llama 2 110M を int8 (Q8_0) で
 
@@ -72,8 +72,8 @@ tokens/sec (1 秒あたりに生成したトークン数)。大きいほど速�
 
 | 生成長 | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|
-| 64 | 432.1 | 61.3 | 153.5 | 7.037 10/10 | 2.806 10/10 |
-| 128 | 422.1 | 61.1 | 153.6 | 6.912 10/10 | 2.754 10/10 |
+| 64 | 431.8 | 62.2 | 152.3 | 6.935 10/10 | 2.844 10/10 |
+| 128 | 428.8 | 62.4 | 153.0 | 6.910 10/10 | 2.815 10/10 |
 
 経過と内訳は [llama2-int8.md](docs/results/llama2-int8.md)。
 
@@ -83,8 +83,8 @@ tokens/sec (1 秒あたりに生成したトークン数)。大きいほど速�
 
 | 生成長 | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|
-| 64 | 502.4 | 147.0 | 373.2 | 3.421 10/10 | 1.343 10/10 |
-| 200 | 492.3 | 145.5 | 373.7 | 3.396 10/10 | 1.322 10/10 |
+| 64 | 502.6 | 149.3 | 375.9 | 3.382 10/10 | 1.336 10/10 |
+| 200 | 501.8 | 148.7 | 373.2 | 3.385 10/10 | 1.339 10/10 |
 
 1 トークン 557 本。経過と内訳は [mamba-130m.md](docs/results/mamba-130m.md)。
 
@@ -94,8 +94,8 @@ tokens/sec。decode は 1 秒あたりに生成したトークン数、encode �
 
 | 条件 | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|
-| decode 72 トークン | 171.2 | 49.7 | 146.4 | 3.436 10/10 | 1.165 10/10 |
-| encode 2048 トークン | 2813.7 | 2699.8 | 2745.2 | 1.041 10/10 | 1.024 9/10 またぐ |
+| decode 72 トークン | 174.4 | 50.2 | 146.7 | 3.462 10/10 | 1.191 10/10 |
+| encode 2048 トークン | 2800.2 | 2705.7 | 2765.8 | 1.035 9/10 またぐ | 1.012 7/10 またぐ |
 
 経過と内訳は [switch-base-8.md](docs/results/switch-base-8.md)。
 
@@ -105,8 +105,8 @@ decode は 1 秒あたりに生成したトークン数、encode は 1 秒あた
 
 | 条件 | Cumo | CuPy | PyTorch | Cumo / CuPy | Cumo / PyTorch |
 |---|---|---|---|---|---|
-| decode (tokens/sec) | 812.5 | 227.9 | 697.3 | 3.561 10/10 | 1.168 10/10 |
-| encode (positions/sec) | 257,538 | 180,397 | 265,718 | 1.428 10/10 | 0.972 0/10 |
+| decode (tokens/sec) | 826.0 | 230.6 | 700.3 | 3.587 10/10 | 1.181 10/10 |
+| encode (positions/sec) | 259,376 | 181,472 | 267,413 | 1.428 10/10 | 0.969 0/10 |
 
 メル (3000 フレーム) はこのバッチに入れていない。経過と内訳は [whisper-tiny.md](docs/results/whisper-tiny.md)。
 
@@ -116,21 +116,21 @@ decode は 1 秒あたりに生成したトークン数、encode は 1 秒あた
 
 | 綴り | Cumo | CuPy | Cumo / CuPy | カーネル/pass (Cumo) |
 |---|---|---|---|---|
-| `shift` | 678.2 | 427.4 | 1.587 10/10 | 580 |
-| `unfold` | 1075.5 | 987.2 | 1.090 10/10 | 384 |
-| 綴りの効き (`unfold` / `shift`、中央値の比) | 1.59 倍 | 2.31 倍 | | |
-| 対照 (Cumo `unfold` をもう一度) | 1075.7 | | またぐ | |
+| `shift` | 682.5 | 429.7 | 1.588 10/10 | 580 |
+| `unfold` | 1081.2 | 991.8 | 1.090 10/10 | 384 |
+| 綴りの効き (`unfold` / `shift`、中央値の比) | 1.58 倍 | 2.31 倍 | | |
+| 対照 (Cumo `unfold` をもう一度) | 1080.5 | | またぐ | |
 
-cuDNN を使う条件は別のバッチで測った (6 条件、13 ラウンドの先頭を捨てて 12)。上の表とまたいで比を取らないこと。CuPy 14.2 は cuDNN の畳み込みを公開していないので、この表の相手は PyTorch。単位は同じく枚/sec。cumo 0.14.0 では cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。
+cuDNN を使う条件は別のバッチで測った (6 条件、13 ラウンドの先頭を捨てて 12)。上の表とまたいで比を取らないこと。CuPy 14.2 は cuDNN の畳み込みを公開していないので、この表の相手は PyTorch。単位は同じく枚/sec。cumo 0.15.0 では cuDNN の作業領域の上限が既定で 128 MiB で、単精度をテンソルコア (TF32) に載せるのは `CUMO_ALLOW_TF32=1` のときだけである。
 
 | 条件 | 枚/sec | カーネル/pass | |
 |---|---|---|---|
-| Cumo `unfold` | 1074.7 | 384 | |
-| Cumo `cudnn` (既定、fp32) | 1887.6 | 178 | `unfold` の 1.75 倍 |
-| Cumo `cudnn` (`CUMO_ALLOW_TF32=1`) | 2013.7 | 216〜217 | `unfold` の 1.87 倍 |
-| PyTorch (fp32) | 2301.4 | | Cumo `cudnn` (fp32) の 1.22 倍 |
-| PyTorch (TF32、既定) | 2819.7 | | Cumo `cudnn` (TF32) の 1.40 倍 |
-| 対照 (Cumo `cudnn` 既定) | 1877.2 | | またぐ |
+| Cumo `unfold` | 1080.8 | 384 | |
+| Cumo `cudnn` (既定、fp32) | 1913.8 | 178 | `unfold` の 1.77 倍 |
+| Cumo `cudnn` (`CUMO_ALLOW_TF32=1`) | 2059.2 | 216〜217 | `unfold` の 1.91 倍 |
+| PyTorch (fp32) | 2316.9 | | Cumo `cudnn` (fp32) の 1.21 倍 |
+| PyTorch (TF32、既定) | 2846.3 | | Cumo `cudnn` (TF32) の 1.38 倍 |
+| 対照 (Cumo `cudnn` 既定) | 1916.7 | | またぐ |
 
 TF32 ありのカーネル数はプロセスによって 216 か 217 になり、1 つの値に決まらない。cuDNN のアルゴリズムの探索が、プロセスごとに違う組を選ぶためである。
 
@@ -145,8 +145,8 @@ GPT-2 124M の decode。上の 3 行は 1 トークンあたりに GPU に投入
 | `sort` (コピー込み) | 0 | 8 | 8 | 8 |
 | `cumsum` (CUB) | 0 | 2 | 4 | 4 |
 | カーネル合計 | 234 | 262 | 276 | 281 |
-| tokens/sec (長さ 900) | 735.9 | 707.0 | 695.1 | 693.6 |
-| 貪欲法 / この条件 | — | 1.0422 10/10 | 1.0570 10/10 | 1.0602 10/10 |
+| tokens/sec (長さ 900) | 737.4 | 710.0 | 699.8 | 696.7 |
+| 貪欲法 / この条件 | — | 1.0398 10/10 | 1.0542 10/10 | 1.0579 10/10 |
 
 経過と内訳は [gpt2-124m.md](docs/results/gpt2-124m.md)。
 
@@ -157,7 +157,7 @@ GPT-2 124M の decode。上の 3 行は 1 トークンあたりに GPU に投入
 | | 勾配の最大 max\|d\| (関門 B) | 10 ステップの最大 \|d\| (関門 C) |
 |---|---|---|
 | Numo (CPU) | 1.244e-02 | 1.48e-03 |
-| Cumo (GPU) | 6.801e-04 | 1.38e-04 |
+| Cumo (GPU) | 6.801e-04 | 1.37e-04 |
 
 下の表は、Cumo と PyTorch を同じバッチでインターリーブし、区間ごとに測ったものである (11 ラウンドの先頭を捨てて 10 ラウンド、対照つき)。値は 1 秒あたりにその区間を通せる回数で、合計の行が steps/sec になる。大きいほど速い。本/step は 1 ステップで GPU に投入するカーネルの本数。
 
@@ -165,10 +165,14 @@ GPT-2 124M の decode。上の 3 行は 1 トークンあたりに GPU に投入
 
 | 区間 | 本/step | Cumo | PyTorch | Cumo / PyTorch |
 |---|---|---|---|---|
-| forward | 331 | 116.6 | 124.6 | 0.93 1/10 またぐ (幅が 24% で値は読めない) |
-| backward | 1755 | 34.4 | 55.7 | 0.61 0/10 |
-| update (AdamW) | 2861 | 28.6 | 49.4 | 0.58 0/10 |
-| 合計 | 4947 | 13.7 | 21.6 | 0.63 0/10 |
+| forward | 331 | 106.8 | 125.0 | 0.85 1/10 またぐ (幅が 38% で値は読めない) |
+| backward | 1755 | 35.1 | 55.9 | 0.63 0/10 |
+| update (AdamW) | 197 | 109.5 | 49.5 | 2.21 10/10 |
+| 合計 | 2283 | 21.2 | 21.7 | 0.98 0/10 |
+
+Cumo の AdamW では更新の式を 1 本のカーネルに融合してある (2026-11-07 から)。PyTorch の列は既定の AdamW (`foreach`) で、`fused=True` にした腕も同じバッチに入れた。`fused=True` の腕は update が 120.6、合計が 29.2 で、Cumo はそれぞれの 0.92 倍 (0/10)、0.73 倍 (0/10) になる。
+
+`DTYPE=fp16` と `DTYPE=bf16` では、AdamW が fp32 の主重みを持つ混合精度で回る (2026-11-07 から)。別のバッチで測った速さは fp32 の 1.58 倍と 1.67 倍だが、損失は llm.c の許容 1e-2 に収まらない。10 ステップの差の最大は fp16 で 1.3e-2、bf16 で 0.18 である。
 
 経過と内訳は [gpt2-124m.md](docs/results/gpt2-124m.md)。
 
@@ -190,7 +194,7 @@ decode で 1 トークンあたりに GPU に投入するカーネルの本数 (
 
 ## 計測環境
 
-2026-10-19 時点の開発機。上の表はすべて、rubygems から入れたリリース版の cumo 0.14.0 で測った。
+2026-11-07 時点の開発機。上の表はすべて、rubygems から入れたリリース版の cumo 0.15.0 で測った。
 
 | | |
 |---|---|
@@ -199,15 +203,15 @@ decode で 1 トークンあたりに GPU に投入するカーネルの本数 (
 | メモリ | 62 GiB (`free` の total) |
 | GPU | NVIDIA GeForce RTX 5070 Ti Laptop (Blackwell, sm_120)、VRAM 12 GB、電力上限 100 W (最大 140 W) |
 | クロック | 計測中は `nvidia-smi -lgc 3090` / `-lmc 14001` で固定 (`clocks.max.sm` 3090 MHz、`clocks.max.mem` 14001 MHz) |
-| OS | CachyOS (Linux 7.2.9-2-cachyos) |
+| OS | CachyOS (Linux 7.3.1-1-cachyos) |
 | NVIDIA ドライバ | 615.78.08 |
 | CUDA | 13.4 (nvcc V13.4.92) |
 | cuDNN | 9.27.0 |
 | コンパイラ | GCC 16.2.1 |
-| Ruby | 4.0.7 |
-| Numo | numo-narray-alt 0.11.2、numo-linalg-alt 0.10.1 (同梱の OpenBLAS 0.3.34) |
-| Cumo | 0.14.0 (`CUMO_NVCC_GENERATE_CODE=arch=compute_120,code=sm_120` で `gem install`) |
-| Python | 3.14.8、NumPy 2.5.3、CuPy 14.2.0、PyTorch 2.13.0+cu130 (同梱の cuDNN 9.20) |
+| Ruby | 4.0.9 |
+| Numo | numo-narray-alt 0.11.3、numo-linalg-alt 0.10.1 (同梱の OpenBLAS 0.3.34) |
+| Cumo | 0.15.0 (`CUMO_NVCC_GENERATE_CODE=arch=compute_120,code=sm_120` で `gem install`) |
+| Python | 3.14.9、NumPy 2.5.3、CuPy 14.2.0、PyTorch 2.13.0+cu130 (同梱の cuDNN 9.20) |
 | プロファイラ | Nsight Systems 2026.3.2 |
 
 GPU の性質 (メモリクロックの段、帯域、電力) は [docs/machine.md](docs/machine.md) にある。メモリクロックの段が違えば同じ条件でも値が 1.4 倍動くので、別の機械の数字と並べるときはそちらを先に読むこと。
