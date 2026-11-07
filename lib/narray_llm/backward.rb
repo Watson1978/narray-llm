@@ -68,24 +68,39 @@ module NArrayLLM
     # train_gpt2.c crossentropy_softmax_backward. probs is [N, V] and targets is
     # a Ruby Array of N ids. dloss is 1/N for llm.c's mean loss.
     #
-    # The one-hot is built arithmetically so no index array reaches the device
-    # (AGENTS.md).
+    # Only the N target entries differ from probs * dloss. They are reached
+    # through a Ruby Array of flat positions, which does not sync (AGENTS.md).
     def crossentropy_softmax(probs, targets, dloss: nil)
-      rows = probs.shape[0]
-      (probs - one_hot(probs.class, targets, probs.shape[1])) * (dloss || (1.0 / rows))
+      rows, classes = probs.shape
+      scale = dloss || (1.0 / rows)
+      at = target_positions(targets, classes)
+      out = probs * scale
+      out[at] = out[at] - scale
+      out
+    end
+
+    # Flat positions of [row, targets[row]] in an [N, num_classes] array.
+    def target_positions(targets, num_classes)
+      Array(targets).flatten.each_with_index.map { |id, row| (row * num_classes) + id }
     end
 
     # train_gpt2.c encoder_backward. dout is [B*T, C] and ids is a Ruby Array of
-    # B*T token ids. Answers [dwte, dwpe], shaped [vocab_size, C] and [T, C].
+    # B*T token ids. Answers [seen, drows, dwpe]: seen lists the distinct ids,
+    # drows [seen.size, C] holds their rows of dwte in that order, and dwpe is
+    # [T, C]. Every other row of dwte is zero, so the caller adds drows into
+    # those rows alone.
     #
-    # llm.c scatters into dwte by token id. A scatter needs an index array, so
-    # the same sum is taken as one matmul against the one-hot instead.
-    def encoder(dout, ids, vocab_size:, batch_size:, seq_len:)
+    # llm.c scatters into dwte by token id. Rows that share an id are summed
+    # here by one matmul against a one-hot over the distinct ids.
+    def encoder(dout, ids, batch_size:, seq_len:)
       channels = dout.shape[1]
-      hot = one_hot(dout.class, ids, vocab_size)
-      dwte = Ops.contiguous(hot.transpose, hot.class).dot(dout)
+      rows = Array(ids).flatten
+      seen = rows.uniq
+      position = seen.each_with_index.to_h
+      hot = one_hot(dout.class, rows.map { |id| position[id] }, seen.size)
+      drows = Ops.contiguous(hot.transpose, hot.class).dot(dout)
       dwpe = dout.reshape(batch_size, seq_len, channels).sum(axis: 0)
-      [dwte, dwpe]
+      [seen, drows, dwpe]
     end
 
     # train_gpt2.c attention_backward. qkv is [B*T, 3C] and weights is the saved

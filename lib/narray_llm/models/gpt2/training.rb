@@ -48,9 +48,9 @@ module NArrayLLM
                               acts[:batch_size], acts[:seq_len])
         end
 
-        dwte, dwpe = Backward.encoder(dx, acts[:ids], vocab_size: @config.vocab_size,
-                                      batch_size: acts[:batch_size], seq_len: acts[:seq_len])
-        grads[:wte] = grads[:wte] + dwte
+        seen, dwte_rows, dwpe = Backward.encoder(dx, acts[:ids], batch_size: acts[:batch_size],
+                                                 seq_len: acts[:seq_len])
+        grads[:wte][seen, true] = grads[:wte][seen, true] + dwte_rows
         grads[:wpe][0...acts[:seq_len], true] = grads[:wpe][0...acts[:seq_len], true] + dwpe
         raise Error, "backward saw #{rows} rows and no targets" if acts[:targets].empty?
 
@@ -154,8 +154,7 @@ module NArrayLLM
       end
 
       def mean_loss(probs, targets)
-        hot = Backward.one_hot(probs.class, targets, @config.vocab_size)
-        picked = (probs * hot).sum(axis: 1)
+        picked = probs[Backward.target_positions(targets, probs.shape[1])]
         picked = Ops.contiguous(picked, XM::SFloat) if NArrayLLM.half_width?(picked.class)
         NArrayLLM.scalar(-XM::NMath.log(picked).mean).to_f
       end

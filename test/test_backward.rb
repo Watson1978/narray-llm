@@ -145,8 +145,9 @@ class TestBackward < Test::Unit::TestCase
       (rows.reshape(BATCH, SEQ, CHANNELS) + wpe).reshape(ROWS, CHANNELS)
     end
 
-    dwte, dwpe = NArrayLLM::Backward.encoder(dout, ids, vocab_size: VOCAB,
-                                             batch_size: BATCH, seq_len: SEQ)
+    seen, drows, dwpe = NArrayLLM::Backward.encoder(dout, ids, batch_size: BATCH, seq_len: SEQ)
+    dwte = D.zeros(VOCAB, CHANNELS)
+    dwte[seen, true] = drows
     assert_matches_numeric(dwte, numeric_grad(wte) { (embed.call * dout).sum }, 'encoder dwte')
     assert_matches_numeric(dwpe, numeric_grad(wpe) { (embed.call * dout).sum }, 'encoder dwpe')
     # Not vacuous: one id repeats, so dwte has to accumulate two rows into one.

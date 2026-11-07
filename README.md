@@ -15,13 +15,13 @@ narray-llm implements six models in Ruby: GPT-2 124M, Llama 2 110M (also with in
 
 Each model must match its reference implementation exactly. For the language models, that means the same token sequence as llm.c, llama2.c, mamba.c or transformers. Training uses the tolerances of llm.c itself.
 
-The tables below compare Cumo with CuPy and PyTorch ports of the same models. They were measured with cumo 0.15.0 on an RTX 5070 Ti Laptop GPU with locked clocks. In one-token decode, Cumo is 3.2 to 3.6 times as fast as CuPy and 1.05 to 1.34 times as fast as PyTorch. Where matrix multiplication dominates (generation without a KV cache, encoders), Cumo runs at 0.95 to 1.01 times the speed of PyTorch. With int8 weights, it is 2.82 to 2.84 times as fast as PyTorch. PyTorch is faster on ResNet-18. In training, Cumo reaches 0.98 times the speed of PyTorch with its default AdamW, and 0.73 times with `fused=True`.
+The tables below compare Cumo with CuPy and PyTorch ports of the same models. They were measured with cumo 0.15.0 on an RTX 5070 Ti Laptop GPU with locked clocks. In one-token decode, Cumo is 3.2 to 3.6 times as fast as CuPy and 1.05 to 1.34 times as fast as PyTorch. Where matrix multiplication dominates (generation without a KV cache, encoders), Cumo runs at 0.95 to 1.01 times the speed of PyTorch. With int8 weights, it is 2.82 to 2.84 times as fast as PyTorch. PyTorch is faster on ResNet-18. In training, Cumo is 1.14 times as fast as PyTorch with its default AdamW, and 0.83 times as fast with `fused=True`.
 
 The project exists to exercise Numo and Cumo on real workloads. Several performance problems found here have been fixed in Cumo itself. The measurement notes under docs/results/ are in Japanese.
 
 ## 数字
 
-要約すると、1 トークンずつ生成する decode では Cumo が CuPy の 3.2〜3.6 倍、PyTorch の 1.05〜1.34 倍速い。行列積が支配する条件 (KV キャッシュ無しの生成、encode) では PyTorch の 0.95〜1.01 倍で、ほぼ並ぶ。int8 では PyTorch の 2.82〜2.84 倍。ResNet-18 は PyTorch が速い。学習は PyTorch の既定の AdamW の 0.98 倍、`fused=True` の 0.73 倍。
+要約すると、1 トークンずつ生成する decode では Cumo が CuPy の 3.2〜3.6 倍、PyTorch の 1.05〜1.34 倍速い。行列積が支配する条件 (KV キャッシュ無しの生成、encode) では PyTorch の 0.95〜1.01 倍で、ほぼ並ぶ。int8 では PyTorch の 2.82〜2.84 倍。ResNet-18 は PyTorch が速い。学習は PyTorch の既定の AdamW の 1.14 倍、`fused=True` の 0.83 倍。
 
 下の表は、同じ重みと同じ手順で Python の 3 実装と並べたものである。5 実装すべてが同一のトークン列を出すことを関門にしてある。
 
@@ -165,14 +165,14 @@ GPT-2 124M の decode。上の 3 行は 1 トークンあたりに GPU に投入
 
 | 区間 | 本/step | Cumo | PyTorch | Cumo / PyTorch |
 |---|---|---|---|---|
-| forward | 331 | 106.8 | 125.0 | 0.85 1/10 またぐ (幅が 38% で値は読めない) |
-| backward | 1755 | 35.1 | 55.9 | 0.63 0/10 |
-| update (AdamW) | 197 | 109.5 | 49.5 | 2.21 10/10 |
-| 合計 | 2283 | 21.2 | 21.7 | 0.98 0/10 |
+| forward | 324 | 121.6 | 119.5 | 1.02 7/10 またぐ (幅が 11% で値は読めない) |
+| backward | 1756 | 38.8 | 52.9 | 0.73 0/10 |
+| update (AdamW) | 197 | 109.2 | 45.3 | 2.37 10/10 |
+| 合計 | 2277 | 23.1 | 20.3 | 1.14 10/10 |
 
-Cumo の AdamW では更新の式を 1 本のカーネルに融合してある (2026-11-07 から)。PyTorch の列は既定の AdamW (`foreach`) で、`fused=True` にした腕も同じバッチに入れた。`fused=True` の腕は update が 120.6、合計が 29.2 で、Cumo はそれぞれの 0.92 倍 (0/10)、0.73 倍 (0/10) になる。
+Cumo の AdamW では更新の式を 1 本のカーネルに融合してある。交差エントロピーと encoder の逆伝播は、正解の位置と、バッチに出てくる id の行だけを計算する (どちらも 2026-11-07 から)。学習の表はこの書き換えのあとに測り直した (2026-11-07、ほかの表とは別のバッチ)。PyTorch の列は既定の AdamW (`foreach`) で、`fused=True` にした腕も同じバッチに入れた。`fused=True` の腕は update が 116.1、合計が 27.8 で、Cumo はそれぞれの 0.93 倍 (1/10、1 をまたぐ)、0.83 倍 (0/10) になる。
 
-`DTYPE=fp16` と `DTYPE=bf16` では、AdamW が fp32 の主重みを持つ混合精度で回る (2026-11-07 から)。別のバッチで測った速さは fp32 の 1.58 倍と 1.67 倍だが、損失は llm.c の許容 1e-2 に収まらない。10 ステップの差の最大は fp16 で 1.3e-2、bf16 で 0.18 である。
+`DTYPE=fp16` と `DTYPE=bf16` では、AdamW が fp32 の主重みを持つ混合精度で回る (2026-11-07 から)。別のバッチで測った速さは fp32 の 1.61 倍と 1.71 倍だが、損失は llm.c の許容 1e-2 に収まらない。10 ステップの差の最大は fp16 で 1.3e-2、bf16 で 0.18 である。
 
 経過と内訳は [gpt2-124m.md](docs/results/gpt2-124m.md)。
 
