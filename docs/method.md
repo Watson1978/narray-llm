@@ -148,10 +148,11 @@ GPU=1 ruby script/gpt2_generate.rb --length 900 --top-k 50 --top-p 0.9 --seed 42
 
 ### 学習の表
 
-Cumo と PyTorch のそれぞれを forward、backward、update で止めた 6 条件と、対照 (Cumo を update まで) の 7 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。1 回は 40 ステップで、先頭の 1 ステップを除いた平均を取る。区間の時間は同じラウンドの中で差を取って出す (backward = backward で止めた時間 − forward で止めた時間)。README の表は、その s/step の逆数である。
+Cumo、CuPy、PyTorch のそれぞれを forward、backward、update で止めた 9 条件と、対照 (Cumo を update まで)、PyTorch の `fused=True` (update まで) の 11 条件をインターリーブして 11 ラウンド、先頭を捨てて 10 ラウンド。1 回は 40 ステップで、先頭の 1 ステップを除いた平均を取る。区間の時間は同じラウンドの中で差を取って出す (backward = backward で止めた時間 − forward で止めた時間)。README の表はその s/step の逆数である。
 
 ```
 GPU=1 ruby script/gpt2_train.rb --steps 40 --no-check --stop-after backward
+GPU=1 IDIOMATIC=1 python/.venv/bin/python python/bench_gpt2_train.py --impl numpy --steps 40 --no-check --stop-after backward
 GPU=1 python/.venv/bin/python python/bench_gpt2_train.py --impl torch --steps 40 --no-check --stop-after backward
 ```
 

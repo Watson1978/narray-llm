@@ -3,7 +3,8 @@
 One function per *_backward in llm.c's train_gpt2.c, answering gradients rather
 than accumulating into buffers, exactly as lib/narray_llm/backward.rb does. The
 point of the port is to run the same operations, so nothing here reaches for an
-autograd or a fused kernel.
+autograd. The one fused kernel is the AdamW update, which lib/narray_llm/adam_w.rb
+fuses the same way.
 
 The debug state reader is here too: llm.c's gpt2_*_debug_state.bin carries the
 inputs, the targets and the gradient for every parameter, which is the gate both
@@ -70,18 +71,32 @@ def matmul_backward(dout, inp, weight_t, bias=True):
     return dinp, dweight_t, (dout.sum(axis=0) if bias else None)
 
 
+def target_positions(targets, num_classes):
+    rows = np.asarray(targets, dtype=np.int64).reshape(-1)
+    return np.arange(rows.size) * num_classes + rows
+
+
 def crossentropy_softmax_backward(probs, targets, dloss=None):
-    rows = probs.shape[0]
+    rows, classes = probs.shape
     scale = dloss if dloss is not None else 1.0 / rows
-    return (probs - one_hot(targets, probs.shape[1])) * scale
+    at = target_positions(targets, classes)
+    out = probs * scale
+    flat = out.reshape(-1)
+    flat[at] = flat[at] - scale
+    return out
 
 
-def encoder_backward(dout, ids, vocab_size, batch_size, seq_len):
+def encoder_backward(dout, ids, batch_size, seq_len):
+    """Answers (seen, drows, dwpe): the distinct ids, their rows of dwte in that
+    order, and dwpe. Every other row of dwte is zero."""
     channels = dout.shape[1]
-    hot = one_hot(ids, vocab_size)
-    dwte = contiguous(hot.T) @ dout
+    rows = np.asarray(ids).reshape(-1).tolist()
+    seen = list(dict.fromkeys(rows))
+    position = {token: index for index, token in enumerate(seen)}
+    hot = one_hot([position[token] for token in rows], len(seen))
+    drows = contiguous(hot.T) @ dout
     dwpe = dout.reshape(batch_size, seq_len, channels).sum(axis=0)
-    return dwte, dwpe
+    return seen, drows, dwpe
 
 
 def _to_heads(flat, batch_size, seq_len, num_heads, head_size):
@@ -170,6 +185,19 @@ class DebugState:
         return xp.asarray(np.frombuffer(raw, dtype="<f4").reshape(shape), dtype=DT)
 
 
+FUSED_ADAMW = xp.ElementwiseKernel(
+    "T g, T lr, T beta1, T one_minus_beta1, T beta2, T one_minus_beta2, "
+    "T eps, T wd, T bias1, T bias2",
+    "T p, T m, T v",
+    """
+    m = beta1 * m + one_minus_beta1 * g;
+    v = beta2 * v + one_minus_beta2 * g * g;
+    T corrected = (m / bias1) / (sqrt(v / bias2) + eps);
+    p = p - lr * (corrected + wd * p);
+    """,
+    "narray_llm_adamw") if gpt2.GPU else None
+
+
 class Trainer:
     """forward_train / backward / AdamW for gpt2.Model, mirroring
     lib/narray_llm/models/gpt2/training.rb and lib/narray_llm/adam_w.rb.
@@ -203,8 +231,8 @@ class Trainer:
         acts["final"] = x
         acts["lnf"] = gpt2.layernorm(x, model.lnfw, model.lnfb)
         acts["probs"] = gpt2.softmax_rows(acts["lnf"] @ model.wte_t)
-        hot = one_hot(acts["targets"], config.vocab_size)
-        loss = float(-xp.log((acts["probs"] * hot).sum(axis=1)).mean())
+        picked = acts["probs"].reshape(-1)[target_positions(acts["targets"], config.vocab_size)]
+        loss = float(-xp.log(picked).mean())
         return loss, acts
 
     def _block(self, x, w, batch_size, seq_len, mask):
@@ -221,7 +249,7 @@ class Trainer:
         return out, saved
 
     def backward(self, acts):
-        model, config = self.model, self.model.config
+        model = self.model
         grads = self._zero_grads()
         dlogits = crossentropy_softmax_backward(acts["probs"], acts["targets"])
         dlnf, dwte_t, _ = matmul_backward(dlogits, acts["lnf"], model.wte_t, bias=False)
@@ -232,9 +260,9 @@ class Trainer:
             dx = self._block_backward(dx, acts["layers"][layer], model.layers[layer], grads,
                                       layer, acts["batch_size"], acts["seq_len"])
 
-        dwte, dwpe = encoder_backward(dx, acts["ids"], config.vocab_size,
-                                      acts["batch_size"], acts["seq_len"])
-        grads["wte"] = grads["wte"] + dwte
+        seen, dwte_rows, dwpe = encoder_backward(dx, acts["ids"], acts["batch_size"],
+                                                 acts["seq_len"])
+        grads["wte"][seen] = grads["wte"][seen] + dwte_rows
         grads["wpe"][:acts["seq_len"]] = grads["wpe"][:acts["seq_len"]] + dwpe
         return grads
 
@@ -303,6 +331,11 @@ class Trainer:
                 self.moments[key] = [xp.zeros(param.shape, dtype=DT),
                                      xp.zeros(param.shape, dtype=DT)]
             first, second = self.moments[key]
+            if FUSED_ADAMW is not None:
+                FUSED_ADAMW(grad, s["learning_rate"], s["beta1"], 1.0 - s["beta1"], s["beta2"],
+                            1.0 - s["beta2"], s["eps"], s["weight_decay"], bias1, bias2,
+                            param, first, second)
+                continue
             first[...] = s["beta1"] * first + (1.0 - s["beta1"]) * grad
             second[...] = s["beta2"] * second + (1.0 - s["beta2"]) * grad * grad
             corrected = (first / bias1) / (xp.sqrt(second / bias2) + s["eps"])
